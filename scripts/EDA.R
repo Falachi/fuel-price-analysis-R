@@ -27,10 +27,9 @@ class(clean_data$year_quarter) # yearqtr class
 # ================================
 
 # quaterly brent crude price per quarter
-quarterly_brent <- clean_data %>%
-  group_by(year_quarter) %>%
+quarterly_brent <- clean_data |>
+  group_by(year_quarter) |>
   summarise(mean_brent = mean(brent_crude_usd, na.rm = TRUE))
-
 
 head(quarterly_brent)
 

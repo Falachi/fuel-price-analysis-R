@@ -93,6 +93,15 @@ Overview of the data:
 glimpse(df)
 ```
 
+**Dataset Summary:**
+
+- Total Observations: 27468
+- Total No. of Columns: 10
+- Total Countries: 84
+- Price Range (Petrol): 0.010, 6.779
+- Price Range (Diesel): 0.01, 6.24
+
+
 This dataset is well suited for our questions because it captures both the primary global market drivers and the local economic buffers that dictate fuel costs. For Q1 (Regression), `brent_crude_usd` provides the baseline upstream cost, while the `date` and `country` variables allow the model to track the exact monthly time lag it takes for global price shocks to pass through to local retail pumps (`petrol_usd_liter`).
 
 For Q2 (Classification), the data provides the structural macro-context needed to categorize quarterly impact risk bands. Features like `subsidy_level` and `tax_percentage` act as policy shields that alter how a nation absorbs financial shocks, while `income_level` and `region` help the classifier identify which clusters of countries are highly vulnerable versus those with the fiscal resilience to smooth out volatile energy spikes.
@@ -142,4 +151,463 @@ Check for inconsistent naming:
 unique(raw_data$country)
 ```
 
-Based on the results above, we can see that there are 
+Based on the results above, we can see that there are no missing values, duplicates, and the target feature is in the correct data type. The distribution of `petrol_usd_liter` may have some outliers on the lower end, but we will keep them for now as they may represent real-world scenarios of fuel price drops. The `country` feature has consistent naming, so no further cleaning is needed in that regard. However, actions will still be taken to ensure the data is in the best shape for modeling and EDA.
+
+#### Cleaning the Data
+
+``` {r clean-data, include=FALSE}
+cleaned_data <- raw_data %>%
+  # 1. Remove Duplicates
+  distinct() %>%
+  # 2. Fix Categorical Errors (Standardize Country Names)
+  mutate(country = case_when(
+    country == "USA" ~ "United States",
+    TRUE ~ country
+  )) %>%
+  # 3. Fix String/Numeric Issues
+  # Remove $ and USD, then convert the whole column to numeric
+  mutate(petrol_usd_liter = as.numeric(str_remove_all(petrol_usd_liter, "[\\$, USD]"))) %>%
+  # 4. Handle Outliers
+  # We turn impossible prices into NA so we can impute them properly in the next step
+  mutate(diesel_usd_liter = ifelse(diesel_usd_liter > 50 | diesel_usd_liter < 0, NA, diesel_usd_liter)) %>%
+  # 5. Impute NAs (Fill the gaps)
+  # We use the average price per country to fill missing spots
+  group_by(country) %>%
+  mutate(
+    petrol_usd_liter = ifelse(is.na(petrol_usd_liter),
+      mean(petrol_usd_liter, na.rm = TRUE),
+      petrol_usd_liter
+    ),
+    diesel_usd_liter = ifelse(is.na(diesel_usd_liter),
+      mean(diesel_usd_liter, na.rm = TRUE),
+      diesel_usd_liter
+    )
+  ) %>%
+  ungroup()
+```
+
+
+The code will remove duplicates, fix categorical errors in country names, convert the `petrol_usd_liter` column to numeric by removing any non-numeric characters, handle outliers in the `diesel_usd_liter` column by setting impossible values to NA, and then impute any remaining NAs with the average price per country. This ensures that our dataset is clean and ready for further analysis and modeling.
+
+#### Verify the Cleaned Data
+
+Check for misssing values:
+``` {r verify-cleaned-data}
+print("Missing values per column:")
+colSums(is.na(cleaned_data))
+```
+
+Check for duplicates:
+``` {r verify-duplicates}
+sum(duplicated(cleaned_data))
+```
+
+Check for data type inconsistencies:
+``` {r verify-data-types}
+class(cleaned_data$petrol_usd_liter)
+```
+
+Check for outliers:
+``` {r verify-outliers}
+summary(cleaned_data$diesel_usd_liter)
+```
+Check for inconsistent naming:
+``` {r verify-inconsistent-naming}
+unique(cleaned_data$country)
+```
+
+And finally, the data is saved for future use:
+``` {r save-cleaned-data, eval=FALSE}
+write_csv(cleaned_data, "data_clean/fuel_prices_cleaned_final.csv")
+```
+
+---
+
+## Exploratory Data Analysis
+
+We will explore the data to uncover relationships and patterns that can inform our modeling approach. This includes visualizations to understand the distribution of fuel prices, the relationship between global crude prices and local retail prices, the impact of each countries every quarter and how different countries and regions are affected by price changes throughout the quarters.
+
+### Initial Setup
+
+``` {r eda-setup-hidden, include=FALSE, echo=FALSE}
+source("scripts/format_clean_data.R")
+```
+
+``` {r eda-setup, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(zoo)
+library(corrplot)
+```
+
+These libraries will be used for data manipulation, visualization, and analysis throughout the EDA process. We will use `ggplot2` for creating visualizations, `dplyr` for data manipulation, `lubridate` for handling date operations, `zoo` for time series analysis, and `corrplot` for visualizing correlations between numeric features.
+
+``` {r eda-extract-date-features}
+clean_data$year_quarter <- as.yearqtr(clean_data$date)
+head(clean_data[, c("date", "year_quarter")])
+class(clean_data$year_quarter) # yearqtr class
+```
+
+This code extracts the year and quarter from the `date` column and creates a new column called `year_quarter`. This will allow us to analyze the data on a quarterly basis, which is important for our classification question. The `as.yearqtr` function from the `zoo` package is used to convert the date into a year-quarter format.
+
+### Global Trends
+
+#### Global Trends in Brent Crude Price
+``` {r global-trends-code}
+quarterly_brent <- clean_data |>
+  group_by(year_quarter) |>
+  summarise(mean_brent = mean(brent_crude_usd, na.rm = TRUE))
+```
+
+This code calculates the average Brent crude price for each quarter by grouping the data by `year_quarter` and then summarizing it to get the mean of `brent_crude_usd`. This will help us understand the global trends in crude oil prices over time.
+
+``` {r global-trends-plot, echo=FALSE}
+ggplot(quarterly_brent, aes(x = year_quarter, y = mean_brent)) +
+  scale_x_yearqtr(format = "%Y Q%q") +
+  geom_line(color = "blue") +
+  theme_minimal() +
+  ggtitle("Mean Brent Crude Price (USD) per Quarter") +
+  xlab("Quarter") +
+  ylab("Mean Brent Crude Price (USD)")
+```
+
+The fuel price is extremely volatile between 2020 Q1 and 2021 Q1. 2020 Q2 is the lowest point in the data before spiking to 100 from ~55. The average brent crude price then stay above 100 except for 2023 Q1 with a value of ~96. 2022 Q2 and 2026 Q1. 2022 Q2 to 2023 Q1 shows a down slope in price before slowly raising up throughout 2023 and 2024.
+
+#### Global Trends in All Fuel Types Price
+
+``` {r global-trends-code-all-fuel}
+quarterly_fuels <- clean_data %>%
+  group_by(year_quarter) %>%
+  summarise(
+    mean_petrol = mean(petrol_usd_liter, na.rm = TRUE),
+    mean_diesel = mean(diesel_usd_liter, na.rm = TRUE),
+    mean_lpg = mean(lpg_usd_liter, na.rm = TRUE)
+  )
+```
+
+This code calculates the average price for petrol, diesel, and LPG for each quarter by grouping the data by `year_quarter` and then summarizing it to get the mean of each fuel type. 
+
+``` {r global-trends-all-fuel, echo=FALSE}
+ggplot(quarterly_fuels, aes(x = year_quarter)) +
+  geom_line(aes(y = mean_petrol, color = "Petrol"), linewidth = 1) +
+  geom_line(aes(y = mean_diesel, color = "Diesel"), linewidth = 1) +
+  geom_line(aes(y = mean_lpg, color = "LPG"), linewidth = 1) +
+  scale_x_yearqtr(format = "%Y Q%q") +
+  scale_color_manual(values = c(
+    "Petrol" = "#1b9e77",
+    "Diesel" = "#d95f02",
+    "LPG" = "#7570b3"
+  )) +
+  theme_minimal() +
+  ggtitle("Mean Fuel Price (USD/Liter) per Quarter") +
+  xlab("Quarter") +
+  ylab("Mean Fuel Price (USD/Liter)") +
+  labs(color = "Fuel Type") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+The mean prices of all fuel types generally follow the Brent crude oil trend. Petrol maintained the highest average price across all quarters, followed by diesel and LPG. The similar movement patterns among fuel types suggest that their prices are positively correlated and influenced by similar market conditions.
+
+### Regional Analysis
+
+#### Regional Trends in Petrol Price by Quarter
+``` {r regional-trends-petrol-code, echo=FALSE}
+regional_petrol <- clean_data |>
+  group_by(year_quarter, region) |>
+  summarise(
+    mean_petrol = mean(petrol_usd_liter, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+This code calculates the average petrol price for each region by quarter by grouping the data by `year_quarter` and `region`, and then summarizing it to get the mean of `petrol_usd_liter`.
+
+``` {r regional-trends-petrol-plot, echo=FALSE}
+ggplot(regional_petrol, aes(x = year_quarter, y = mean_petrol, color = region, group = region)) +
+  geom_line(linewidth = 1) +
+  scale_x_yearqtr(format = "%Y Q%q") +
+  scale_color_brewer(palette = "Accent") +
+  ggtitle("Mean Petrol Price (USD/Liter) by Region per Quarter") +
+  xlab("Quarter") +
+  ylab("Mean Petrol Price (USD/Liter)") +
+  labs(color = "Region") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+Europe and Oceania showed to have the highest petrol price throughout the quarters, way above the other regions. They show no minimal difference with each other, but have a big leap from the next region.North America and Asia showed to have similar grouping like Europe and Ocenia. Then followed by Africa, South America and Middle East.
+
+This has some logic when comparing with proven oil reserves. Middle East is logical due to the high reserves in comparison to Europe and Oceania. There could also however be a relationship between fuel prices, and the countries' subsidy and income level. South America has high reserve countries such as Venuzuela and Brazil, though not as much as the Middle East. Therefore, a proper analysis of specific countries and its levels should be conducted.
+
+### Country Variability
+
+``` {r country-variability-petrol-code, echo=FALSE}
+country_variability <- clean_data %>%
+  group_by(country) %>%
+  summarise(
+    mean_petrol = mean(petrol_usd_liter, na.rm = TRUE),
+    sd_petrol = sd(petrol_usd_liter, na.rm = TRUE),
+    min_petrol = min(petrol_usd_liter, na.rm = TRUE),
+    max_petrol = max(petrol_usd_liter, na.rm = TRUE)
+  ) %>%
+  arrange(desc(sd_petrol))
+
+top_volatile <- country_variability %>%
+  slice_max(sd_petrol, n = 10)
+```
+
+This code calculates the mean, standard deviation, minimum, and maximum petrol price for each country by grouping the data by `country` and then summarizing it. The countries are then arranged in descending order based on the standard deviation of petrol prices to identify which countries have the most variability in their petrol prices. The top 10 most volatile countries are extracted for further analysis.
+
+``` {r country-variability-petrol-plot, echo=FALSE}
+ggplot(
+  top_volatile,
+  aes(
+    x = reorder(country, sd_petrol),
+    y = sd_petrol,
+    fill = sd_petrol
+  )
+) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_gradient(low = "#56B1F7", high = "#132B43") +
+  ggtitle("Top 10 Most Volatile Countries by Petrol Price") +
+  xlab("Country") +
+  ylab("Standard Deviation of Petrol Price") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+``` {r country-variability-petrol-boxplot, echo=FALSE}
+# separated to add space between the bar chart and boxplot
+top_countries <- top_volatile$country
+
+boxplot_data <- clean_data %>%
+  filter(country %in% top_countries)
+
+ggplot(
+  boxplot_data,
+  aes(
+    x = reorder(country, petrol_usd_liter, median),
+    y = petrol_usd_liter,
+    fill = country
+  )
+) +
+  geom_boxplot() +
+  coord_flip() +
+  theme_minimal() +
+  ggtitle("Petrol Price Distribution of Most Volatile Countries") +
+  xlab("Country") +
+  ylab("Petrol Price (USD/Liter)") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+The variability analysis showed that several countries experienced significantly higher fluctuations in petrol prices compared to others. Countries with higher standard deviation values indicate less stable fuel pricing trends over time, potentially due to weaker subsidy controls, economic instability, or stronger sensitivity to global crude oil price movements. In contrast, countries with lower variability demonstrated more stable fuel prices, which may suggest stronger regulatory or subsidy mechanisms.
+
+### Relationship Analysis
+
+#### Petrol Price Distribution by Income Level
+
+``` {r relationship-analysis-petrol-income, echo=FALSE}
+ggplot(
+  clean_data,
+  aes(
+    x = income_level,
+    y = petrol_usd_liter,
+    fill = income_level
+  )
+) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  ggtitle("Petrol Price Distribution by Income Level") +
+  xlab("Income Level") +
+  ylab("Petrol Price (USD/Liter)") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+Looking at boxplot, we can see that the the distribution for each level overlaps with another. Both low and middle income level have a distribution between 0 and 4 USD/L, though low income level has a low median than middle income level. low income level is shown to have a normal distribution, while middle income is positively skewed. On the other hand, high income level has a huge distribution, between approximately 0 and 7 USD/L. It is skewed to the upper percentile, and some outliers can be seen in the lower percentile.
+
+The graph suggests that income level does play a role in the petrol prices, though a high income level is not always an indicator of a high petrol price. An example would be the UAE which has a high income level but low petrol price.
+
+#### Petrol Price Distribution by Subsidy Level
+
+``` {r relationship-analysis-petrol-subsidy, echo=FALSE}
+ggplot(
+  clean_data,
+  aes(
+    x = subsidy_level,
+    y = petrol_usd_liter,
+    fill = subsidy_level
+  )
+) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  ggtitle("Petrol Price Distribution by Subsidy Level") +
+  xlab("Subsidy Level") +
+  ylab("Petrol Price (USD/Liter)") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+The boxplot shows a clear inverse relationship between subsidy level and petrol price. It shows a decrease in the petrol price distribution from low to very high with each level tightening the distribution. Some outliers are present in the medium and high, though no outliers are on low despite the wide distribution - suggesting that the distribution is spread apart on the 25% and 100% quartile.
+
+#### Correlation Matrix of Numeric Features
+
+``` {r relationship-analysis-correlation, echo=FALSE}
+numeric_data <- clean_data %>%
+  select(
+    petrol_usd_liter,
+    diesel_usd_liter,
+    lpg_usd_liter,
+    brent_crude_usd,
+    tax_percentage
+  )
+
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+
+# install.packages('corrplot')
+library(corrplot)
+
+corrplot(
+  cor_matrix,
+  title = "Correlation Matrix of All Numerical Features",
+  method = "color",
+  addCoef.col = "black",
+  tl.col = "black",
+  tl.srt = 45,
+  mar = c(0, 0, 2, 0) # Adds space at the top for the title
+)
+```
+As expected, petrol, diesel, and LPG prices show extremely strong positive correlations with one another, with correlation coefficients close to 0.99. This indicates that the prices of different fuel types generally move together over time.
+
+In contrast, Brent crude oil prices show only weak positive correlations with the fuel prices, with coefficients around 0.25 to 0.26. This suggests that while crude oil prices may influence fuel prices, they are not the sole determinant of retail fuel pricing. Other factors such as subsidies, taxation policies, and regional economic conditions may also contribute significantly.
+
+Tax percentage shows almost no correlation with Brent crude oil prices but demonstrates moderate positive correlations of approximately 0.52 with fuel prices. This suggests that countries with higher fuel taxation tend to have higher retail fuel prices.
+
+### Quarterly Change Analysis
+
+#### Quarter to Quarter Change in Petrol Price
+``` {r quarterly-change-petrol-country-code, echo=FALSE}
+quarterly_country <- clean_data %>%
+  group_by(country, year_quarter) %>%
+  summarise(
+    mean_petrol = mean(petrol_usd_liter, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+quarterly_country <- quarterly_country %>%
+  group_by(country) %>%
+  arrange(year_quarter) %>%
+  mutate(
+    pct_change = (
+      (mean_petrol - lag(mean_petrol)) /
+        lag(mean_petrol)
+    ) * 100
+  )
+```
+This code calculates the average petrol price for each country by quarter and then computes the percentage change in petrol price from one quarter to the next for each country. The `lag` function is used to access the previous quarter's mean petrol price for the percentage change calculation.
+
+``` {r quarterly-change-petrol-country-plot, echo=FALSE}
+ggplot(
+  quarterly_country,
+  aes(x = pct_change)
+) +
+  geom_histogram(
+    bins = 50,
+    fill = "#1f77b4",
+    color = "white"
+  ) +
+  theme_minimal() +
+  coord_cartesian(xlim = c(-50, 50)) +
+  scale_x_continuous(breaks = seq(-50, 50, by = 10)) +
+  ggtitle("Distribution of Quarterly Petrol Price Changes") +
+  xlab("Quarter-to-Quarter Percentage Change") +
+  ylab("Frequency") +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+The distribution of quarterly petrol price changes is concentrated mainly between -10% and 10%, with the highest frequency occurring in the positive 0% to 10% range. This suggests that most quarterly petrol price movements are relatively moderate, with price increases occurring more frequently than decreases.
+
+Although extreme changes are less common, several larger positive changes above 30% are present. Negative changes also appear frequently, particularly within the -20% to -10% range, indicating that substantial price drops occurred in certain periods. Overall, the distribution suggests that petrol prices generally experience moderate quarterly fluctuations with occasional periods of high volatility.
+
+#### Impact Level Analysis by Quarter
+
+``` {r impact-level-analysis-code, echo=FALSE}
+quarterly_country <- quarterly_country %>%
+  mutate(
+    impact_level = case_when(
+      abs(pct_change) < 5 ~ "Low",
+      abs(pct_change) < 15 ~ "Medium",
+      TRUE ~ "High"
+    )
+  )
+
+quarterly_country$impact_level <- factor(
+  quarterly_country$impact_level,
+  levels = c("Low", "Medium", "High"),
+  ordered = TRUE
+)
+```
+
+This code categorizes the percentage change in petrol price into three impact levels: "Low" for changes less than 5%, "Medium" for changes between 5% and 15%, and "High" for changes greater than or equal to 15%. The `case_when` function is used to create the `impact_level` variable based on the absolute value of the percentage change. The resulting `impact_level` variable is then converted into an ordered factor with specified levels.
+
+``` {r impact-level-analysis-plot, echo=FALSE}
+ggplot(
+  quarterly_country,
+  aes(
+    x = impact_level,
+    fill = impact_level
+  )
+) +
+  geom_bar() +
+  theme_minimal() +
+  ggtitle("Distribution of Fuel Price Impact Levels") +
+  xlab("Impact Level") +
+  ylab("Count") +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+The impact level distribution shows that most observations fall within the low impact category, followed by medium and high impact levels. This is consistent with the previous histogram analysis, where the majority of quarterly petrol price changes were concentrated around the -10% to 10% range. High impact observations occur less frequently, indicating that extreme quarterly fuel price fluctuations are relatively uncommon.
+
+### Summary
+
+- Fuel prices generally followed the trend of Brent crude oil prices over time, with petrol consistently having the
+  highest average price.
+- Europe and Oceania recorded the highest average petrol prices, while the Middle East generally showed lower prices.
+- Country-level analysis showed that some countries experienced significantly higher fuel price volatility than others.
+- Petrol, diesel, and LPG prices showed extremely strong positive correlations with one another.
+- Brent crude oil prices showed only weak positive correlations with retail fuel prices, suggesting that additional
+  factors influence fuel pricing.
+- Tax percentage showed moderate positive correlation with fuel prices.
+- Higher subsidy levels were generally associated with lower and more stable petrol prices.
+- Most quarterly petrol price changes were concentrated within the -10% to 10% range.
+- The majority of observations were classified as low impact, while high impact fuel price changes occurred less
+  frequently.
+- The findings suggest that fuel prices are influenced by crude oil trends, taxation, subsidies, and regional economic
+  conditions.
+
+---
+
+## Data Preparation
