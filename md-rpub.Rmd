@@ -141,3 +141,5 @@ Check for inconsistent naming:
 # E. Check for Inconsistent Naming
 unique(raw_data$country)
 ```
+
+Based on the results above, we can see that there are 
