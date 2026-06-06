@@ -1,7 +1,7 @@
 __MACOSX
 .Rproj.user
 .vscode
-docs
+docs-else
 *.zip
 data_raw
 data_clean
