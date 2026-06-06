@@ -1,0 +1,10 @@
+__MACOSX
+.Rproj.user
+.vscode
+docs
+*.zip
+data_raw
+data_clean
+data_processed
+data_split
+Data Preparation

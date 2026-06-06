@@ -1,0 +1,28 @@
+# ================================
+# SUMMARY
+# ================================
+"
+- Fuel prices generally followed the trend of Brent crude oil prices over time, with petrol consistently having the 
+  highest average price.
+- Europe and Oceania recorded the highest average petrol prices, while the Middle East generally showed lower prices.
+- Country-level analysis showed that some countries experienced significantly higher fuel price volatility than others.
+- Petrol, diesel, and LPG prices showed extremely strong positive correlations with one another.
+- Brent crude oil prices showed only weak positive correlations with retail fuel prices, suggesting that additional 
+  factors influence fuel pricing.
+- Tax percentage showed moderate positive correlation with fuel prices.
+- Higher subsidy levels were generally associated with lower and more stable petrol prices.
+- Most quarterly petrol price changes were concentrated within the -10% to 10% range.
+- The majority of observations were classified as low impact, while high impact fuel price changes occurred less 
+  frequently.
+- The findings suggest that fuel prices are influenced by crude oil trends, taxation, subsidies, and regional economic 
+  conditions.
+"
+
+# NOTES:
+"
+- The EDA suggests that engineered features such as quarterly percentage change, volatility indicators, and grouped 
+  impact levels may improve the performance of the classification model.
+
+- Time-based features and categorical variables such as subsidy level and income level may also contribute to the 
+  regression and classification tasks.
+"

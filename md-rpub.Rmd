@@ -1,0 +1,143 @@
+---
+title: Predicting Fuel Prices and Impact Level Based on Brent Price and Country's
+  Characteristics
+author: "Group 2"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Volatilities in global energy markets introduce severe economic uncertainties, impacting consumer retail prices and national economic planning. Understanding the pass-through effect of crude oil price shocks onto localized retail markets requires a dual-pronged analytical framework.
+
+This study leverages historical data across distinct temporal granularities to address two core research questions using machine learning paradigms:
+
+#### Q1: Retail Price Prediction (Regression Model)
+**Objective:** To predict future retail fuel prices based on the historical behavior of crude oil benchmarks.
+
+**Granularity:** Analyzed according to country by month to capture medium-term macroeconomic shifts and regional dependencies.
+
+**Approach:** Continuous numeric forecasting (Regression) to map upstream supply-side costs directly to downstream consumer impacts.
+
+#### Q2: Global Price Impact Assessment (Classification Model)
+**Objective:** To build a classification architecture that analyzes the specific impact level of global fuel price spikes on localized retail adjustments.
+
+**Granularity:** Monitored by quarter to align with broader corporate and national budgetary cycles.
+
+**Approach:** Categorical risk assessment (Classification) to segment country-specific fuel behavior into distinct shock-absorption or impact bands.
+
+We will employ a standard machine learning framework which consist of:
+
+- **Data Understanding:** Overview and surface understanding of the data to ensure it meets our needs
+- **Data Preprocessing:** Cleaning, integration and transformation to ensure the data is robust
+- **Exploratory Data Analysis:** Exploring the data deeper to uncover relationships through visualization
+- **Modeling:** Compare various models along with hyperparameter tuning to find the best suited for both questions
+- **Analysis:** Analyze the result, as well as understand the limitation
+
+---
+
+## Data Understanding
+
+The data was gathered from Kaggle by the user BELBIN BENO R M titled [*Global Fuel Prices 2020–2026*](https://www.kaggle.com/datasets/belbino/global-fuel-prices-20202026). It was then imported to R with the default function. A preview of the first 5 records are as below:
+
+``` {r data-import}
+df <- read.csv("./data_raw/global_fuel_prices_2020_2026.csv")
+```
+``` {r data-preview, echo=FALSE}
+library(knitr)
+kable(df[1:5, ], caption = "Preview of the First Five Records in the Dataset")
+```
+
+The data consists of nine features:
+
+- `date`: The time stamp of the record in the format of YYYY-MM-DD
+- `country`: The specific nation where the fuel prices were recorded
+- `region`: The broader geographic territory
+- `income_level`: The economic classification of the country
+- `subsidy_level`: Indicates the scale of government intervention and subsidies on national fuel prices
+- `petrol_usd_liter`: The local retail price of consumer gasoline, standardized to US Dollars per liter
+- `diesel_usd_liter`: The local retail price of automotive and industrial diesel fuel, standardized to US Dollars per liter
+- `lpg_usd_liter`: The local retail price of Liquefied Petroleum Gas, standardized to US Dollars per liter
+- `brent_crude_usd`: The global benchmark price for a barrel of Brent Crude oil in US Dollars
+- `tax_percentage`: The tax rate applied by the national government to fuel sales
+
+``` {r preview-again, echo=FALSE, include = FALSE}
+library(dplyr)
+library(tidyverse)
+
+# 1. Identify categorical columns (Factors or Characters)
+categorical_cols <- df %>%
+  select(where(is.factor) | where(is.character)) %>%
+  names()
+```
+
+Number of Unique Values:
+``` {R, echo=FALSE}
+df %>%
+  summarise(across(all_of(categorical_cols), n_distinct)) %>%
+  pivot_longer(cols = everything(), names_to = "name", values_to = "n") %>%
+  pwalk(~ cat(sprintf("%s: %d\n", ..1, ..2)))
+```
+
+Overview of the data:
+``` {r, echo = FALSE}
+glimpse(df)
+```
+
+This dataset is well suited for our questions because it captures both the primary global market drivers and the local economic buffers that dictate fuel costs. For Q1 (Regression), `brent_crude_usd` provides the baseline upstream cost, while the `date` and `country` variables allow the model to track the exact monthly time lag it takes for global price shocks to pass through to local retail pumps (`petrol_usd_liter`).
+
+For Q2 (Classification), the data provides the structural macro-context needed to categorize quarterly impact risk bands. Features like `subsidy_level` and `tax_percentage` act as policy shields that alter how a nation absorbs financial shocks, while `income_level` and `region` help the classifier identify which clusters of countries are highly vulnerable versus those with the fiscal resilience to smooth out volatile energy spikes.
+
+---
+
+## Data Preprocessing
+
+This process is divided into three main steps: data cleaning, data integration, and data transformation.
+
+### Data Cleaning
+
+Libraries used for data cleaning:
+``` {r data-cleaning, echo=FALSE}
+library(tidyverse)
+```
+
+#### Indetify the Dirty Data
+
+This step checks for missing values, duplicates, data type inconsistencies, outliers and inconsistent naming.
+
+Missing values per column:
+``` {r identify-dirty-data}
+raw_data <- df
+colSums(is.na(raw_data))
+```
+
+Number of duplicates:
+``` {r check-duplicates}
+sum(duplicated(raw_data))
+```
+
+Data type inconsistencies:
+``` {r check-data-types}
+class(raw_data$petrol_usd_liter)
+```
+
+Check for outliers:
+``` {r check-outliers}
+# D. Check for Outliers
+summary(raw_data$diesel_usd_liter)
+```
+
+Check for inconsistent naming:
+``` {r check-inconsistent-naming}
+# E. Check for Inconsistent Naming
+unique(raw_data$country)
+```

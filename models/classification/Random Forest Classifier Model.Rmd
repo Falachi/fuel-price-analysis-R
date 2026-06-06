@@ -1,0 +1,140 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+## Classification Model: Random Forest Classifier 
+
+## Objective of the Classification Model
+The objective of this classification model is to predict the **impact level of global fuel price changes** on countries’ fuel price changes by quarter.  
+The target variable `impact_level` has three categories: *Low Impact*, *Medium Impact*, and *High Impact*.  
+
+Random Forest was selected because it is well‑suited for **multi‑class classification problems** and can handle complex interactions between categorical and continuous predictors.  
+It also provides variable importance measures, which help identify the most influential factors driving classification outcomes.  
+
+In this project, the predictors include:
+  - **Quarter** (seasonal effects)  
+- **Country** (policy and subsidy differences)  
+- **Fuel type** (petrol, diesel, LPG)  
+- **Crude oil percentage change** (global market fluctuations)  
+
+## Methods
+```{r}
+#Load libraries
+library(randomForest)
+library(caret)
+library(ggplot2)
+library(pROC)
+
+# Read train/test datasets
+train_df <- read.csv("train_df.csv")
+test_df  <- read.csv("test_df.csv")
+
+# Ensure factor levels match
+train_df$impact_level <- trimws(train_df$impact_level)
+test_df$impact_level  <- trimws(test_df$impact_level)
+
+train_df$impact_level <- factor(train_df$impact_level,
+                                levels = c("Low Impact","Medium Impact","High Impact"))
+test_df$impact_level  <- factor(test_df$impact_level,
+                                levels = c("Low Impact","Medium Impact","High Impact"))
+```
+## Results
+```{r}
+# Check class distribution
+cat("Train class counts:\n")
+print(table(train_df$impact_level))
+cat("Test class counts:\n")
+print(table(test_df$impact_level))
+```
+
+## Model Training 
+```{r}
+# Train Random Forest model
+set.seed(123)
+rf_model <- randomForest(impact_level ~ quarter + country + fuel_type +
+                           crude_pct_change,
+                         data = train_df,
+                         ntree = 300,
+                         mtry = floor(sqrt(5)),
+                         importance = TRUE)
+```
+
+## Model Evaluation
+```{r}
+# Predict on test set
+predictions <- predict(rf_model, newdata = test_df)
+```
+
+## Confusion Matrix
+```{r}
+cm <- confusionMatrix(predictions, test_df$impact_level)
+print(cm)
+```
+The model achieves an overall accuracy of 70.4%. It performs very well at identifying Low Impact cases, correctly predicting 1,577 of them. However, it experiences noticeable friction with Medium Impact cases, frequently misclassifying them as Low Impact.
+
+## Per class metrics
+```{r}
+precision <- cm$byClass[, "Pos Pred Value"]
+recall    <- cm$byClass[, "Sensitivity"]
+f1        <- 2 * ((precision * recall) / (precision + recall))
+
+metrics_df <- data.frame(
+  Class     = rownames(cm$byClass),
+  Precision = round(precision, 3),
+  Recall    = round(recall, 3),
+  F1_Score  = round(f1, 3),
+  Balanced_Accuracy = round(cm$byClass[, "Balanced Accuracy"], 3)
+)
+print(metrics_df)
+```
+The per-class metrics confirm that the model is highly reliable for Low Impact predictions, yielding a strong F1-Score of 0.801 and a recall of 0.891. Conversely, Medium Impact is the weakest category with an F1-Score of 0.514, showing that the model requires sharper decision boundaries to separate minor baseline shifts from low-level activity.
+
+## Variable Importance Plot 
+```{r}
+imp <- importance(rf_model)
+imp_df <- data.frame(Variable = rownames(imp),
+                     MeanDecreaseAccuracy = imp[, "MeanDecreaseAccuracy"])
+
+ggplot(imp_df, aes(x = reorder(Variable, MeanDecreaseAccuracy),
+                   y = MeanDecreaseAccuracy)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Variable Importance (Random Forest)",
+       x = "Predictor",
+       y = "Mean Decrease in Accuracy") +
+  theme_minimal()
+```
+Changes in global crude oil prices are by far the most important factor driving the model's predictions, completely outperforming everything else. On the other hand, the fuel type variable actually scores below zero. This indicates that knowing whether a fuel is petrol or diesel provides no real predictive value and might even confuse the model, making it a prime candidate to be removed in future versions.
+
+## Class distribution plot
+```{r}
+ggplot(train_df, aes(x = impact_level)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Class Distribution (Train Set)", x = "Impact Level", y = "Count") +
+  theme_minimal()
+
+ggplot(test_df, aes(x = impact_level)) +
+  geom_bar(fill = "darkred") +
+  labs(title = "Class Distribution (Test Set)", x = "Impact Level", y = "Count") +
+  theme_minimal()
+```
+The distribution plots reveal a critical shift between our datasets. While the training set is relatively well-balanced across all three tiers, the testing set is heavily skewed toward Low Impact observations (1,770 cases vs. only 574 High Impact cases). This imbalance in the test data heavily influences our final accuracy metrics.
+
+## Confusion matrix heatmap
+```{r}
+cm_table <- as.data.frame(cm$table)
+ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Confusion Matrix Heatmap") +
+  theme_minimal()
+```
+The heatmap visually isolates where the model succeeds and where it loses track. The deep blue square at the bottom left highlights the model's core strength: correctly identifying Low Impact cases 1,577 times. However, the lighter tile right next to it clearly flags our primary weak point, showing that 468 actual Medium Impact cases were incorrectly swept into the Low Impact category.
+
+## Conclusion
+The Random Forest model provides a solid baseline with an overall accuracy of 70.4%, proving highly effective at identifying low-impact market shifts. Because global crude oil trends completely dominate the model's decision tree splits while product specifics like fuel type offer no actual value, future work should focus on simplifying the feature space. Dropping the fuel type variable and introducing specific country by crude interaction terms will be the most direct path to fixing the overlap between Low and Medium impact classes.
+
+
+
