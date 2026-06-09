@@ -5,7 +5,7 @@ output:
 ---
 ## Classification Model: Random Forest Classifier 
 
-## Objective of the Classification Model
+### Objective of the Classification Model
 The objective of this classification model is to predict the **impact level of global fuel price changes** on countries’ fuel price changes by quarter.  
 The target variable `impact_level` has three categories: *Low Impact*, *Medium Impact*, and *High Impact*.  
 
@@ -13,31 +13,34 @@ Random Forest was selected because it is well‑suited for **multi‑class class
 It also provides variable importance measures, which help identify the most influential factors driving classification outcomes.  
 
 In this project, the predictors include:
-  - **Quarter** (seasonal effects)  
+
+- **Quarter** (seasonal effects)  
 - **Country** (policy and subsidy differences)  
 - **Fuel type** (petrol, diesel, LPG)  
 - **Crude oil percentage change** (global market fluctuations)  
 
-## Methods
+### Methods
 ```{r}
-#Load libraries
+# Load libraries
 library(randomForest)
 library(caret)
 library(ggplot2)
 library(pROC)
 
 # Read train/test datasets
-train_df <- read.csv("train_df.csv")
-test_df  <- read.csv("test_df.csv")
+train_df <- read.csv("data_raw/train_df.csv")
+test_df <- read.csv("data_raw/test_df.csv")
 
 # Ensure factor levels match
 train_df$impact_level <- trimws(train_df$impact_level)
-test_df$impact_level  <- trimws(test_df$impact_level)
+test_df$impact_level <- trimws(test_df$impact_level)
 
 train_df$impact_level <- factor(train_df$impact_level,
-                                levels = c("Low Impact","Medium Impact","High Impact"))
-test_df$impact_level  <- factor(test_df$impact_level,
-                                levels = c("Low Impact","Medium Impact","High Impact"))
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+test_df$impact_level <- factor(test_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
 ```
 ## Results
 ```{r}
@@ -49,15 +52,17 @@ print(table(test_df$impact_level))
 ```
 
 ## Model Training 
-```{r}
+```{r, eval = FALSE}
 # Train Random Forest model
 set.seed(123)
-rf_model <- randomForest(impact_level ~ quarter + country + fuel_type +
-                           crude_pct_change,
-                         data = train_df,
-                         ntree = 300,
-                         mtry = floor(sqrt(5)),
-                         importance = TRUE)
+rf_model <- randomForest(
+  impact_level ~ quarter + country + fuel_type +
+    crude_pct_change,
+  data = train_df,
+  ntree = 300,
+  mtry = floor(sqrt(5)),
+  importance = TRUE
+)
 ```
 
 ## Model Evaluation
@@ -76,33 +81,39 @@ The model achieves an overall accuracy of 70.4%. It performs very well at identi
 ## Per class metrics
 ```{r}
 precision <- cm$byClass[, "Pos Pred Value"]
-recall    <- cm$byClass[, "Sensitivity"]
-f1        <- 2 * ((precision * recall) / (precision + recall))
+recall <- cm$byClass[, "Sensitivity"]
+f1 <- 2 * ((precision * recall) / (precision + recall))
 
 metrics_df <- data.frame(
-  Class     = rownames(cm$byClass),
+  Class = rownames(cm$byClass),
   Precision = round(precision, 3),
-  Recall    = round(recall, 3),
-  F1_Score  = round(f1, 3),
+  Recall = round(recall, 3),
+  F1_Score = round(f1, 3),
   Balanced_Accuracy = round(cm$byClass[, "Balanced Accuracy"], 3)
 )
 print(metrics_df)
 ```
 The per-class metrics confirm that the model is highly reliable for Low Impact predictions, yielding a strong F1-Score of 0.801 and a recall of 0.891. Conversely, Medium Impact is the weakest category with an F1-Score of 0.514, showing that the model requires sharper decision boundaries to separate minor baseline shifts from low-level activity.
 
-## Variable Importance Plot 
+## Variable Importance Plot
 ```{r}
 imp <- importance(rf_model)
-imp_df <- data.frame(Variable = rownames(imp),
-                     MeanDecreaseAccuracy = imp[, "MeanDecreaseAccuracy"])
+imp_df <- data.frame(
+  Variable = rownames(imp),
+  MeanDecreaseAccuracy = imp[, "MeanDecreaseAccuracy"]
+)
 
-ggplot(imp_df, aes(x = reorder(Variable, MeanDecreaseAccuracy),
-                   y = MeanDecreaseAccuracy)) +
+ggplot(imp_df, aes(
+  x = reorder(Variable, MeanDecreaseAccuracy),
+  y = MeanDecreaseAccuracy
+)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip() +
-  labs(title = "Variable Importance (Random Forest)",
-       x = "Predictor",
-       y = "Mean Decrease in Accuracy") +
+  labs(
+    title = "Variable Importance (Random Forest)",
+    x = "Predictor",
+    y = "Mean Decrease in Accuracy"
+  ) +
   theme_minimal()
 ```
 Changes in global crude oil prices are by far the most important factor driving the model's predictions, completely outperforming everything else. On the other hand, the fuel type variable actually scores below zero. This indicates that knowing whether a fuel is petrol or diesel provides no real predictive value and might even confuse the model, making it a prime candidate to be removed in future versions.

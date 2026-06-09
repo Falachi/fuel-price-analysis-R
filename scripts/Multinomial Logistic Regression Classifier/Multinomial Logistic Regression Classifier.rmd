@@ -1,0 +1,517 @@
+**Classification Model: Multinomial Logistic Regression**
+
+**Objective of the Classification Model**
+
+**Q2 Classification: To build classification model that analyse impact
+level of global fuel price to countries fuel price changes by quarter.**
+
+The objective of this classification model is to classify the impact
+level of global fuel price changes on countries\' fuel price changes by
+quarter. The target variable used in this model is impact_level, which
+consists of three classes: Low Impact, Medium Impact, and High Impact.
+
+Multinomial Logistic Regression was selected because the classification
+problem has more than two outcome categories. Unlike binary Logistic
+Regression, which is used for two-class classification problems,
+Multinomial Logistic Regression can handle multi-class classification
+problems.
+
+In this model, the predictors used are quarter, country, fuel_type, and
+crude_pct_change. These variables are used to examine whether quarterly
+crude oil price movements and country-level fuel information can
+classify the level of impact on country fuel price changes.
+
+\# Load required libraries
+
+library(dplyr)
+
+library(caret)
+
+library(nnet)
+
+library(ggplot2)
+
+library(pROC)
+
+\# Load training and testing datasets
+
+train_df \<- read.csv(\"train_df.csv\")
+
+test_df \<- read.csv(\"test_df.csv\")
+
+\# If R cannot find the files, use this instead:
+
+\# train_df \<- read.csv(file.choose())
+
+\# test_df \<- read.csv(file.choose())
+
+**Data Preparation for Multinomial Logistic Regression**
+
+\# Remove extra spaces from the target variable
+
+train_df\$impact_level \<- trimws(train_df\$impact_level)
+
+test_df\$impact_level \<- trimws(test_df\$impact_level)
+
+\# Convert target variable into factor with fixed class order
+
+train_df\$impact_level \<- factor(
+
+train_df\$impact_level,
+
+levels = c(\"Low Impact\", \"Medium Impact\", \"High Impact\")
+
+)
+
+test_df\$impact_level \<- factor(
+
+test_df\$impact_level,
+
+levels = c(\"Low Impact\", \"Medium Impact\", \"High Impact\")
+
+)
+
+\# Check class distribution
+
+cat(\"Training class distribution:\\n\")
+
+print(table(train_df\$impact_level))
+
+cat(\"Testing class distribution:\\n\")
+
+print(table(test_df\$impact_level))
+
+\# Convert categorical predictors into factors
+
+categorical_cols \<- c(\"quarter\", \"country\", \"fuel_type\")
+
+for (col in categorical_cols) {
+
+train_df\[\[col\]\] \<- factor(train_df\[\[col\]\])
+
+test_df\[\[col\]\] \<- factor(test_df\[\[col\]\], levels =
+levels(train_df\[\[col\]\]))
+
+}
+
+\# Scale numerical predictor using training data statistics
+
+crude_mean \<- mean(train_df\$crude_pct_change, na.rm = TRUE)
+
+crude_sd \<- sd(train_df\$crude_pct_change, na.rm = TRUE)
+
+train_df\$crude_pct_change_scaled \<-
+
+(train_df\$crude_pct_change - crude_mean) / crude_sd
+
+test_df\$crude_pct_change_scaled \<-
+
+(test_df\$crude_pct_change - crude_mean) / crude_sd
+
+\# Select variables used in the model
+
+model_vars \<- c(
+
+\"impact_level\",
+
+\"quarter\",
+
+\"country\",
+
+\"fuel_type\",
+
+\"crude_pct_change_scaled\"
+
+)
+
+\# Remove missing values from selected variables
+
+train_model \<- train_df %\>%
+
+select(all_of(model_vars)) %\>%
+
+na.omit()
+
+test_model \<- test_df %\>%
+
+select(all_of(model_vars)) %\>%
+
+na.omit()
+
+\# Check final number of observations used
+
+cat(\"Training rows used:\", nrow(train_model), \"\\n\")
+
+cat(\"Testing rows used:\", nrow(test_model), \"\\n\")
+
+The variable impact_level was used as the target variable. The
+predictors selected were quarter, country, fuel_type, and
+crude_pct_change_scaled. The numerical variable crude_pct_change was
+scaled to improve model stability.
+
+**Building the Multinomial Logistic Regression Model**
+
+\# Build Multinomial Logistic Regression model
+
+set.seed(123)
+
+multi_log_model \<- multinom(
+
+impact_level \~ quarter + country + fuel_type + crude_pct_change_scaled,
+
+data = train_model,
+
+maxit = 1000,
+
+trace = FALSE
+
+)
+
+\# Display model summary
+
+summary(multi_log_model)
+
+**Model Prediction**
+
+\# Predict class labels on the test data
+
+pred_class \<- predict(
+
+multi_log_model,
+
+newdata = test_model,
+
+type = \"class\"
+
+)
+
+pred_class \<- factor(
+
+pred_class,
+
+levels = c(\"Low Impact\", \"Medium Impact\", \"High Impact\")
+
+)
+
+\# Predict class probabilities
+
+pred_prob \<- predict(
+
+multi_log_model,
+
+newdata = test_model,
+
+type = \"probs\"
+
+)
+
+\# View first few predicted probabilities
+
+head(pred_prob)
+
+**Confusion Matrix and Classification Performance**
+
+\# Confusion matrix
+
+conf_matrix \<- confusionMatrix(
+
+pred_class,
+
+test_model\$impact_level
+
+)
+
+conf_matrix
+
+The confusion matrix shows how many observations were correctly and
+incorrectly classified by the Multinomial Logistic Regression model. The
+diagonal values represent correct predictions, while the off-diagonal
+values represent misclassifications.
+
+**Visualisation of Confusion Matrix**
+
+\# Convert confusion matrix into dataframe
+
+cm_table \<- as.data.frame(conf_matrix\$table)
+
+\# Plot confusion matrix heatmap
+
+ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
+
+geom_tile(color = \"white\") +
+
+geom_text(aes(label = Freq), color = \"white\", size = 5, fontface =
+\"bold\") +
+
+scale_fill_gradient(low = \"lightblue\", high = \"darkblue\") +
+
+labs(
+
+title = \"Confusion Matrix Heatmap\",
+
+subtitle = \"Multinomial Logistic Regression\",
+
+x = \"Actual Impact Level\",
+
+y = \"Predicted Impact Level\",
+
+fill = \"Count\"
+
+) +
+
+theme_minimal()
+
+**Accuracy, Precision, Recall and F1-Score**
+
+\# Extract overall accuracy
+
+accuracy \<- conf_matrix\$overall\[\"Accuracy\"\]
+
+\# Extract per-class metrics
+
+precision \<- conf_matrix\$byClass\[, \"Pos Pred Value\"\]
+
+recall \<- conf_matrix\$byClass\[, \"Sensitivity\"\]
+
+\# Calculate F1-score
+
+f1_score \<- 2 \* ((precision \* recall) / (precision + recall))
+
+\# Create per-class performance table
+
+metrics_df \<- data.frame(
+
+Class = rownames(conf_matrix\$byClass),
+
+Precision = round(precision, 4),
+
+Recall = round(recall, 4),
+
+F1_Score = round(f1_score, 4),
+
+Balanced_Accuracy = round(conf_matrix\$byClass\[, \"Balanced
+Accuracy\"\], 4)
+
+)
+
+metrics_df
+
+\# Calculate macro-average metrics
+
+macro_precision \<- mean(precision, na.rm = TRUE)
+
+macro_recall \<- mean(recall, na.rm = TRUE)
+
+macro_f1 \<- mean(f1_score, na.rm = TRUE)
+
+\# Create summary table
+
+macro_metrics \<- data.frame(
+
+Metric = c(\"Accuracy\", \"Macro Precision\", \"Macro Recall\", \"Macro
+F1-score\"),
+
+Value = round(c(accuracy, macro_precision, macro_recall, macro_f1), 4)
+
+)
+
+macro_metrics
+
+The accuracy shows the overall proportion of correctly classified
+observations. Precision shows how reliable the model is when it predicts
+a specific impact class. Recall shows how well the model identifies
+actual cases from each class. The F1-score provides a balanced measure
+between precision and recall.
+
+**Multiclass ROC and AUC**
+
+\# Calculate multiclass AUC
+
+multi_auc \<- multiclass.roc(
+
+response = test_model\$impact_level,
+
+predictor = pred_prob
+
+)
+
+multi_auc_value \<- auc(multi_auc)
+
+multi_auc_value
+
+The multiclass AUC measures how well the model separates the three
+impact levels overall. A higher AUC value indicates stronger
+classification performance.
+
+**One-vs-All ROC Curves**
+
+\# One-vs-All ROC curve for Low Impact
+
+roc_low \<- roc(
+
+response = ifelse(test_model\$impact_level == \"Low Impact\", 1, 0),
+
+predictor = pred_prob\[, \"Low Impact\"\]
+
+)
+
+\# One-vs-All ROC curve for Medium Impact
+
+roc_medium \<- roc(
+
+response = ifelse(test_model\$impact_level == \"Medium Impact\", 1, 0),
+
+predictor = pred_prob\[, \"Medium Impact\"\]
+
+)
+
+\# One-vs-All ROC curve for High Impact
+
+roc_high \<- roc(
+
+response = ifelse(test_model\$impact_level == \"High Impact\", 1, 0),
+
+predictor = pred_prob\[, \"High Impact\"\]
+
+)
+
+\# Plot ROC curves
+
+plot(
+
+roc_low,
+
+col = \"blue\",
+
+lwd = 2,
+
+main = \"One-vs-All ROC Curves for Multinomial Logistic Regression\"
+
+)
+
+plot(
+
+roc_medium,
+
+col = \"orange\",
+
+lwd = 2,
+
+add = TRUE
+
+)
+
+plot(
+
+roc_high,
+
+col = \"darkgreen\",
+
+lwd = 2,
+
+add = TRUE
+
+)
+
+abline(a = 0, b = 1, lty = 2, col = \"red\")
+
+legend(
+
+\"bottomright\",
+
+legend = c(
+
+paste(\"Low Impact AUC =\", round(auc(roc_low), 4)),
+
+paste(\"Medium Impact AUC =\", round(auc(roc_medium), 4)),
+
+paste(\"High Impact AUC =\", round(auc(roc_high), 4))
+
+),
+
+col = c(\"blue\", \"orange\", \"darkgreen\"),
+
+lwd = 2
+
+)
+
+**\
+**
+
+**Model Results and Interpretation**
+
+  -----------------------------------------------------------------------
+  **Metric**                                    **Value**
+  --------------------------------------------- -------------------------
+  Accuracy                                      **55.80%**
+
+  Macro Precision                               **46.00%**
+
+  Macro Recall                                  **50.91%**
+
+  Macro F1-score                                **44.92%**
+
+  Multiclass AUC                                **68.38%**
+
+  Kappa                                         **0.2311**
+  -----------------------------------------------------------------------
+
+The Multinomial Logistic Regression model was developed to classify the
+impact level of global fuel price changes on country-level fuel price
+changes by quarter. The target variable used was impact_level, which
+consists of three categories: **Low Impact**, **Medium Impact**, and
+**High Impact**. The predictors used in the model were quarter, country,
+fuel_type, and crude_pct_change.
+
+Based on the test dataset, the model achieved an overall accuracy of
+**55.8%**. This means that the model correctly classified 55.8% of the
+observations. The No Information Rate was **53.01%**, which represents
+the accuracy that could be achieved by always predicting the majority
+class. Since the model accuracy is only slightly higher than the No
+Information Rate, this indicates that the model provides some
+improvement over a simple majority-class prediction, but the improvement
+is limited.
+
+The confusion matrix shows that the model performed best in classifying
+**Low Impact** observations. Out of the actual Low Impact cases, the
+model correctly classified **1,417** observations, giving a recall of
+**80.06%** for this class. This suggests that the model is reasonably
+good at detecting lower-impact fuel price changes.
+
+For **High Impact**, the model showed moderate performance. It correctly
+classified **378** High Impact observations, with a recall of
+**65.85%**. However, the precision for High Impact was **45.27%**,
+meaning that not all observations predicted as High Impact were actually
+High Impact cases.
+
+The weakest performance was observed for **Medium Impact**. The model
+correctly classified only **68** Medium Impact observations, while many
+Medium Impact cases were misclassified as Low Impact or High Impact. The
+recall for Medium Impact was only **6.83%**, showing that the model had
+difficulty identifying this category. This may suggest that Medium
+Impact observations are less clearly separated from the other two
+classes using the selected predictors.
+
+The macro-average results further support this interpretation. The model
+achieved a **Macro Precision of 46.00%**, **Macro Recall of 50.91%**,
+and **Macro F1-score of 44.92%**. Although the overall accuracy was
+55.8%, the low Macro F1-score shows that the model performance was not
+balanced across all three impact levels. In particular, the poor
+performance for Medium Impact reduced the overall class-balanced
+performance.
+
+The model also achieved a **Multiclass AUC of 0.6838**, indicating a
+moderate ability to distinguish between Low Impact, Medium Impact, and
+High Impact classes. However, this value also suggests that the model
+still has room for improvement.
+
+Overall, the Multinomial Logistic Regression model provides a useful
+baseline for the classification problem. It is able to identify Low
+Impact cases relatively well and shows moderate ability in detecting
+High Impact cases. However, it struggles to classify Medium Impact
+observations accurately. This indicates that the relationship between
+global crude oil price changes and country-level fuel price impact may
+be more complex than what a linear classification model can fully
+capture. Therefore, more flexible machine learning models such as Random
+Forest or XGBoost may be better suited to improve classification
+performance.

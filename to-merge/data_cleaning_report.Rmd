@@ -1,0 +1,171 @@
+---
+title: "Global Fuel Price Data Cleaning Report"
+date: "2026-06-06"
+output:
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+## Executive Summary
+This document details the reproducible data cleaning workflow applied to the dirty_fuel_data.csv dataset. The goal of this pipeline is to address duplicate rows, inconsistent categorical naming, character-to-numeric type mismatches, statistical outliers, and missing data imputation.
+
+## Clean Data Overview
+Total Observations: 27,468
+Total Columns: 10
+Total Unique Countries Covered: 84
+Petrol Price Range: $0.010 - $6.779 USD/Liter
+Diesel Price Range: $0.010 - $6.240 USD/Liter
+
+## Part 1: Environment Setup
+First, we load the tidyverse suite (which includes dplyr, readr, stringr, and ggplot2 for efficient data manipulation) and import the raw dataset.
+
+```{r load-data}
+# Load the tidyverse core packages
+library(tidyverse)
+
+# Load the dirty data
+raw_data <- read_csv("dirty_fuel_data.csv")
+
+# Look at the structure of the data
+glimpse(raw_data)
+```
+
+## Part 2: Identifying "Dirty" Data
+Before writing the cleaning pipeline, we must profile the dataset to uncover quality, structure, and validity issues.
+
+### A. Check for Missing Values (NAs)
+
+```{r check-nas}
+print("Missing values per column:")
+colSums(is.na(raw_data))
+```
+
+### B. Check for Duplicates
+
+```{r check-duplicates}
+print("Number of duplicate rows:")
+sum(duplicated(raw_data))
+```
+
+### C. Check for Data Type Mismatches
+
+```{r check-types}
+# Verifying if the petrol price column is recognized as numeric
+class(raw_data$petrol_usd_liter)
+```
+
+### D. Check for Outliers
+
+```{r check-outliers}
+# Summarizing diesel to identify mathematically impossible values
+summary(raw_data$diesel_usd_liter)
+```
+
+### E. Check for Inconsistent Naming
+
+```{r check-naming}
+# Identifying naming variants for categorical grouping
+unique(raw_data$country)
+```
+
+## Part 3: The Data Cleaning Pipeline
+Using a single dplyr pipe sequence, we apply five specific data-cleaning steps to ensure the integrity of the data without breaking spatial correlations.
+1. Deduplication: Removed identical duplicate rows to prevent skewed statistical distributions.
+2. Structural Fixes: Standardized categorical country values (e.g., mapping "USA" to "United States").
+3. Type Conversion: Stripped special characters ($, USD, spaces) from petrol_usd_liter and cast it to numeric.
+4. Outlier Mitigation: Filtered out unrealistic diesel prices (>50 or <0) and set them to NA.
+5. Missing Value Imputation: Imputed missing values using the grouped country mean, preserving localized geographic price variations.
+
+```{r cleaning-pipeline}
+cleaned_data <- raw_data %>%
+  # 1. Remove Duplicates
+  distinct() %>%
+  
+  # 2. Fix Categorical Errors (Standardize Country Names)
+  mutate(country = case_when(
+    country == "USA" ~ "United States",
+    country == "U.S.A." ~ "United States", # Accommodating common variants
+    TRUE ~ country
+  )) %>%
+  
+  # 3. Fix String/Numeric Issues
+  mutate(petrol_usd_liter = as.numeric(str_remove_all(petrol_usd_liter, "[\\$, USD]"))) %>%
+  
+  # 4. Handle Outliers (Coerce bad numbers to NA)
+  mutate(diesel_usd_liter = ifelse(diesel_usd_liter > 50 | diesel_usd_liter < 0, NA, diesel_usd_liter)) %>%
+  
+  # 5. Impute NAs using geographic country averages
+  group_by(country) %>%
+  mutate(
+    petrol_usd_liter = ifelse(is.na(petrol_usd_liter), 
+                              mean(petrol_usd_liter, na.rm = TRUE), 
+                              petrol_usd_liter),
+    diesel_usd_liter = ifelse(is.na(diesel_usd_liter), 
+                              mean(diesel_usd_liter, na.rm = TRUE), 
+                              diesel_usd_liter)
+  ) %>%
+  ungroup()
+```
+
+## Part 4: Verification & Export
+Post-Cleaning Quality Assurance
+We run the data profiling checks again to verify that our dataset is now clean.
+
+```{r verification}
+# 1. Check for remaining Missing Values
+colSums(is.na(cleaned_data))
+
+# 2. Check for remaining Duplicates
+sum(duplicated(cleaned_data))
+
+# 3. Verify final data types
+class(cleaned_data$petrol_usd_liter)
+
+# 4. Verify distribution ranges without massive outliers
+summary(cleaned_data$diesel_usd_liter)
+```
+
+## Save Final Dataset
+The final, sparkling clean data is saved for analysis and downstream reporting.
+
+```{r export-data}
+write_csv(cleaned_data, "fuel_prices_cleaned_final.csv")
+print("Cleaning complete! Final data successfully exported.")
+```
+
+## Appendix: Data Dictionary
+The clean dataset consists of 10 variables outlined below:
+
+```{r appendix-table, echo=FALSE}
+# Create a data frame for your data dictionary
+appendix_df <- data.frame(
+  No = 1:10,
+  Variable_Name = c("date", "country", "region", "income_level", "subsidy_level", 
+                    "petrol_usd_liter", "diesel_usd_liter", "lpg_usd_liter", 
+                    "brent_crude_usd", "tax_percentage"),
+  Data_Type = c("Date", "Character", "Character", "Character", "Character", 
+                "Numeric", "Numeric", "Numeric", "Numeric", "Numeric"),
+  Description = c("The recorded date of fuel prices.",
+                  "Name of the country (standardized).",
+                  "Geographic region (e.g., North America, Europe).",
+                  "Economic classification of the country.",
+                  "Level of government fuel subsidies.",
+                  "Price of gasoline per liter in USD.",
+                  "Price of diesel per liter in USD.",
+                  "Price of LPG per liter in USD.",
+                  "The global benchmark price for crude oil.",
+                  "The percentage of fuel price consisting of tax.")
+)
+
+# Render it perfectly as a table
+knitr::kable(appendix_df, col.names = c("#", "Variable Name", "Data Type", "Description"))
+```

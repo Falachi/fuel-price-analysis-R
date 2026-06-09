@@ -108,70 +108,97 @@ For Q2 (Classification), the data provides the structural macro-context needed t
 
 ---
 
-## Data Preprocessing
+## Data Cleaning
 
-This process is divided into three main steps: data cleaning, data integration, and data transformation.
+### Executive Summary
+This section details the reproducible data cleaning workflow applied to the dirty_fuel_data.csv dataset. The goal of this pipeline is to address duplicate rows, inconsistent categorical naming, character-to-numeric type mismatches, statistical outliers, and missing data imputation.
 
-### Data Cleaning
+### Clean Data Overview
+Total Observations: 27,468
+Total Columns: 10
+Total Unique Countries Covered: 84
+Petrol Price Range: $0.010 - $6.779 USD/Liter
+Diesel Price Range: $0.010 - $6.240 USD/Liter
 
-Libraries used for data cleaning:
-``` {r data-cleaning, echo=FALSE}
+### Part 1: Environment Setup
+First, we load the tidyverse suite (which includes dplyr, readr, stringr, and ggplot2 for efficient data manipulation) and import the raw dataset.
+
+```{r load-data-hidden, echo=FALSE}
+# Load the tidyverse core packages
 library(tidyverse)
+
+# Load the dirty data
+raw_data <- read_csv("data_raw/dirty_fuel_data.csv")
 ```
 
-#### Indetify the Dirty Data
+``` {r view-dirty-data, echo=FALSE}
+# Look at the structure of the data
+glimpse(raw_data)
+```
 
-This step checks for missing values, duplicates, data type inconsistencies, outliers and inconsistent naming.
+### Part 2: Identifying "Dirty" Data
+Before writing the cleaning pipeline, we must profile the dataset to uncover quality, structure, and validity issues.
 
-Missing values per column:
-``` {r identify-dirty-data}
-raw_data <- df
+#### A. Check for Missing Values (NAs)
+
+```{r check-nas}
+print("Missing values per column:")
 colSums(is.na(raw_data))
 ```
 
-Number of duplicates:
-``` {r check-duplicates}
+#### B. Check for Duplicates
+
+```{r check-duplicates}
+print("Number of duplicate rows:")
 sum(duplicated(raw_data))
 ```
 
-Data type inconsistencies:
-``` {r check-data-types}
+#### C. Check for Data Type Mismatches
+
+```{r check-types}
+# Verifying if the petrol price column is recognized as numeric
 class(raw_data$petrol_usd_liter)
 ```
 
-Check for outliers:
-``` {r check-outliers}
-# D. Check for Outliers
+#### D. Check for Outliers
+
+```{r check-outliers}
+# Summarizing diesel to identify mathematically impossible values
 summary(raw_data$diesel_usd_liter)
 ```
 
-Check for inconsistent naming:
-``` {r check-inconsistent-naming}
-# E. Check for Inconsistent Naming
+#### E. Check for Inconsistent Naming
+
+```{r check-naming}
+# Identifying naming variants for categorical grouping
 unique(raw_data$country)
 ```
 
-Based on the results above, we can see that there are no missing values, duplicates, and the target feature is in the correct data type. The distribution of `petrol_usd_liter` may have some outliers on the lower end, but we will keep them for now as they may represent real-world scenarios of fuel price drops. The `country` feature has consistent naming, so no further cleaning is needed in that regard. However, actions will still be taken to ensure the data is in the best shape for modeling and EDA.
+### Part 3: The Data Cleaning Pipeline
 
-#### Cleaning the Data
+Using a single dplyr pipe sequence, we apply five specific data-cleaning steps to ensure the integrity of the data without breaking spatial correlations.
 
-``` {r clean-data, include=FALSE}
+1. Deduplication: Removed identical duplicate rows to prevent skewed statistical distributions.
+2. Structural Fixes: Standardized categorical country values (e.g., mapping "USA" to "United States").
+3. Type Conversion: Stripped special characters ($, USD, spaces) from petrol_usd_liter and cast it to numeric.
+4. Outlier Mitigation: Filtered out unrealistic diesel prices (>50 or <0) and set them to NA.
+5. Missing Value Imputation: Imputed missing values using the grouped country mean, preserving localized geographic price variations.
+
+```{r cleaning-pipeline, echo=FALSE}
 cleaned_data <- raw_data %>%
   # 1. Remove Duplicates
   distinct() %>%
   # 2. Fix Categorical Errors (Standardize Country Names)
   mutate(country = case_when(
     country == "USA" ~ "United States",
+    country == "U.S.A." ~ "United States", # Accommodating common variants
     TRUE ~ country
   )) %>%
   # 3. Fix String/Numeric Issues
-  # Remove $ and USD, then convert the whole column to numeric
   mutate(petrol_usd_liter = as.numeric(str_remove_all(petrol_usd_liter, "[\\$, USD]"))) %>%
-  # 4. Handle Outliers
-  # We turn impossible prices into NA so we can impute them properly in the next step
+  # 4. Handle Outliers (Coerce bad numbers to NA)
   mutate(diesel_usd_liter = ifelse(diesel_usd_liter > 50 | diesel_usd_liter < 0, NA, diesel_usd_liter)) %>%
-  # 5. Impute NAs (Fill the gaps)
-  # We use the average price per country to fill missing spots
+  # 5. Impute NAs using geographic country averages
   group_by(country) %>%
   mutate(
     petrol_usd_liter = ifelse(is.na(petrol_usd_liter),
@@ -186,39 +213,64 @@ cleaned_data <- raw_data %>%
   ungroup()
 ```
 
+### Part 4: Verification & Export
+Post-Cleaning Quality Assurance
+We run the data profiling checks again to verify that our dataset is now clean.
 
-The code will remove duplicates, fix categorical errors in country names, convert the `petrol_usd_liter` column to numeric by removing any non-numeric characters, handle outliers in the `diesel_usd_liter` column by setting impossible values to NA, and then impute any remaining NAs with the average price per country. This ensures that our dataset is clean and ready for further analysis and modeling.
-
-#### Verify the Cleaned Data
-
-Check for misssing values:
-``` {r verify-cleaned-data}
-print("Missing values per column:")
+```{r verification}
+# 1. Check for remaining Missing Values
 colSums(is.na(cleaned_data))
-```
 
-Check for duplicates:
-``` {r verify-duplicates}
+# 2. Check for remaining Duplicates
 sum(duplicated(cleaned_data))
-```
 
-Check for data type inconsistencies:
-``` {r verify-data-types}
+# 3. Verify final data types
 class(cleaned_data$petrol_usd_liter)
-```
 
-Check for outliers:
-``` {r verify-outliers}
+# 4. Verify distribution ranges without massive outliers
 summary(cleaned_data$diesel_usd_liter)
 ```
-Check for inconsistent naming:
-``` {r verify-inconsistent-naming}
-unique(cleaned_data$country)
+
+### Save Final Dataset
+The final, sparkling clean data is saved for analysis and downstream reporting.
+
+```{r export-data, eval=FALSE}
+write_csv(cleaned_data, "fuel_prices_cleaned_final.csv")
+print("Cleaning complete! Final data successfully exported.")
 ```
 
-And finally, the data is saved for future use:
-``` {r save-cleaned-data, eval=FALSE}
-write_csv(cleaned_data, "data_clean/fuel_prices_cleaned_final.csv")
+### Appendix: Data Dictionary
+The clean dataset consists of 10 variables outlined below:
+
+```{r appendix-table, echo=FALSE}
+# Create a data frame for your data dictionary
+appendix_df <- data.frame(
+  No = 1:10,
+  Variable_Name = c(
+    "date", "country", "region", "income_level", "subsidy_level",
+    "petrol_usd_liter", "diesel_usd_liter", "lpg_usd_liter",
+    "brent_crude_usd", "tax_percentage"
+  ),
+  Data_Type = c(
+    "Date", "Character", "Character", "Character", "Character",
+    "Numeric", "Numeric", "Numeric", "Numeric", "Numeric"
+  ),
+  Description = c(
+    "The recorded date of fuel prices.",
+    "Name of the country (standardized).",
+    "Geographic region (e.g., North America, Europe).",
+    "Economic classification of the country.",
+    "Level of government fuel subsidies.",
+    "Price of gasoline per liter in USD.",
+    "Price of diesel per liter in USD.",
+    "Price of LPG per liter in USD.",
+    "The global benchmark price for crude oil.",
+    "The percentage of fuel price consisting of tax."
+  )
+)
+
+# Render it perfectly as a table
+knitr::kable(appendix_df, col.names = c("#", "Variable Name", "Data Type", "Description"))
 ```
 
 ---
@@ -611,3 +663,170 @@ The impact level distribution shows that most observations fall within the low i
 ---
 
 ## Data Preparation
+
+### Introduction to Data Preparation
+
+This report documents the end-to-end data preparation workflow required to clean, transform, and engineer features from our raw fuel market data. The final output generates two highly specialized datasets: a monthly time-series file structured for regression modeling, and a quarterly file tailored for classification tasks.
+
+### Environment Setup and Data Ingestion
+
+To build a reproducible data pipeline, we initialize our environment by loading the `tidyverse` library for core data manipulation and reshaping, alongside `lubridate` for specialized date-time parsing operations.
+
+```{r setup-data-ingestion, message=FALSE, warning=FALSE}
+library(tidyverse) # Core data science packages (dplyr, tidyr, stringr, readr)
+library(lubridate) # Specialized package for date conversion
+
+df <- read_csv("data_clean/fuel_prices_cleaned_final.csv")
+```
+
+
+## Data Preprocessing
+The raw input dataset tracks retail asset classes across multiple adjacent wide columns. To make this data compatible with tidy data principles, we first parse the text dates into structured date values ​​and then collapse the multiple fuel columns into a single categorical key-value pair.
+```{r data-preprocessing}
+# 1. Date Conversion & Feature Extraction
+df_clean <- df %>%
+  mutate(
+    # Convert string to Date format. 'dmy' parses Day/Month/Year correctly.
+    date = dmy(date),
+
+    # Extract temporal features for downstream grouping
+    year = year(date),
+    month = month(date),
+    quarter = quarter(date)
+  )
+
+# 2. Data Pivoting
+df_long <- df_clean %>%
+  pivot_longer(
+    cols = c(petrol_usd_liter, diesel_usd_liter, lpg_usd_liter),
+    names_to = "fuel_type", # New column holding the categorical fuel names
+    values_to = "retail_price_usd" # New column holding the numerical prices
+  )
+```
+
+### Text Normalization and Formatting
+Reshaping variables automatically preserves technical column tags (such as _usd_liter). We apply regular expression string adjustments to strip out technical labels and normalize the text into title case format to ensure clean reporting aesthetics.
+```{r text-normalization}
+df_long <- df_long %>%
+  mutate(
+    # Remove the redundant "_usd_liter" text from the fuel types
+    fuel_type = str_replace(fuel_type, "_usd_liter", ""),
+    fuel_type = str_to_title(fuel_type)
+  )
+```
+
+### Feature Discretization and Binning
+
+To support multi-tier behavioral analysis, continuous numbers are grouped into distinct market classes. Retail rates and tax metrics are split into equal statistical thirds (tertiles) driven by data distributions, while crude oil indicators are segmented using deterministic macro-economic price blocks.
+
+```{r feature-discretization}
+df_long <- df_long %>%
+  mutate(
+    # A. Retail Price Categories (Using equal statistical thirds)
+    price_category = cut(
+      retail_price_usd,
+      breaks = quantile(retail_price_usd, probs = c(0, 1 / 3, 2 / 3, 1), na.rm = TRUE),
+      labels = c("Low Retail", "Medium Retail", "High Retail"),
+      include.lowest = TRUE
+    ),
+
+    # B. Tax Categories (Using equal statistical thirds)
+    tax_category = cut(
+      tax_percentage,
+      breaks = quantile(tax_percentage, probs = c(0, 1 / 3, 2 / 3, 1), na.rm = TRUE),
+      labels = c("Low Tax", "Medium Tax", "High Tax"),
+      include.lowest = TRUE
+    ),
+
+    # C. Crude Oil Categories (Using specific rule-based thresholds)
+    crude_category = case_when(
+      brent_crude_usd < 50 ~ "Cheap Crude",
+      brent_crude_usd >= 50 & brent_crude_usd <= 80 ~ "Normal Crude",
+      brent_crude_usd > 80 ~ "Expensive Crude",
+      TRUE ~ "Unknown"
+    )
+  )
+```
+
+### Aggregation & Predictive Feature Engineering
+
+With foundational adjustments finalized, we construct our two final target analytical arrays.
+
+#### Dataset 1: Monthly Regression Pipeline
+
+This pipeline groups observations into monthly country footprints, preserving structural local parameters like tax classifications. We also extract a sequential lag index to evaluate historical, trailing market dependencies.
+```{r monthly-regression-pipeline}
+q1_monthly_data <- df_long %>%
+  # Included tax_category so it doesn't get deleted
+  group_by(country, region, income_level, tax_category, year, month, fuel_type) %>%
+  summarize(
+    avg_retail_price = mean(retail_price_usd, na.rm = TRUE),
+    avg_crude_price = mean(brent_crude_usd, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  # Create Historical Behavior (Lagged Variable)
+  arrange(country, fuel_type, year, month) %>% # Sort chronologically first
+  group_by(country, fuel_type) %>%
+  mutate(
+    # This grabs the crude price from 1 month ago
+    historical_crude_price = lag(avg_crude_price, n = 1)
+  ) %>%
+  ungroup() %>%
+  drop_na(historical_crude_price) # Drops the very first month which has no history
+
+print("--- Q1 Monthly Data Ready ---")
+head(q1_monthly_data)
+```
+
+#### Dataset 2: Quarterly Classification Pipeline
+
+This sequence maps records onto a wider quarterly footprint. It handles the mathematical computation of quarter-over-quarter growth rates for local retail structures and global crude oil benchmarks, using these rates to establish a hard boundary for our classification target impact_level.
+
+```{r quarterly-classification-pipeline}
+q2_quarterly_data <- df_long %>%
+  group_by(country, region, income_level, tax_category, year, quarter, fuel_type) %>%
+  summarize(
+    avg_retail_price = mean(retail_price_usd, na.rm = TRUE),
+    avg_crude_price = mean(brent_crude_usd, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  # Calculate Percentage Changes and "Impact Level" Class
+  arrange(country, fuel_type, year, quarter) %>% # Sort chronologically first
+  group_by(country, fuel_type) %>%
+  mutate(
+    # Calculate Quarter-over-Quarter % Change
+    retail_pct_change = (avg_retail_price - lag(avg_retail_price)) / lag(avg_retail_price) * 100,
+    crude_pct_change = (avg_crude_price - lag(avg_crude_price)) / lag(avg_crude_price) * 100
+  ) %>%
+  ungroup() %>%
+  mutate(
+    # Create the Target Variable for Classification based on the price change
+    impact_level = case_when(
+      abs(retail_pct_change) > 5 ~ "High Impact",
+      abs(retail_pct_change) >= 2 ~ "Medium Impact",
+      abs(retail_pct_change) < 2 ~ "Low Impact",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  drop_na(impact_level)
+
+print("--- Q2 Quarterly Data Ready ---")
+head(q2_quarterly_data)
+```
+
+### Downstream Asset Exporting
+
+To ensure data continuity and freeze state baselines for independent downstream model validation, both structures are written out to dedicated local storage nodes.
+
+```{r data-export, eval=FALSE}
+# Extracting datasets
+write_csv(q1_monthly_data, "data_processed/Q1_Monthly_Regression_Data.csv")
+write_csv(q2_quarterly_data, "data_processed/Q2_Quarterly_Classification_Data.csv")
+
+print("Success! Both CSV files have been extracted and saved to your folder.")
+```
+
+---
+
+## Regression Modeling
+
