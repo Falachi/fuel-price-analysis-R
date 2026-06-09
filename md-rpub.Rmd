@@ -831,7 +831,7 @@ print("Success! Both CSV files have been extracted and saved to your folder.")
 ## Regression Modeling
 
 ### Executive Summary
-In this module of our analytics project, we developed an advanced machine learning pipeline to forecast global retail fuel prices. To capture complex, non-linear market behaviours such as regional policy variations and the lag effects of global oil shocks, we executed a comparative tournament between three different methodologies: Linear Regression (Elastic Net), Random Forest, and Extreme Gradient Boosting (XGBoost). 
+In this section of our analytics project, we developed an advanced machine learning pipeline to forecast global retail fuel prices. To capture complex, non-linear market behaviours such as regional policy variations and the lag effects of global oil shocks, we executed a comparative tournament between three different methodologies: Linear Regression (Elastic Net), Random Forest, and Extreme Gradient Boosting (XGBoost). 
 
 ### Import Libraries & Data
 In this section, we load the required packages from the tidymodels framework alongside specialized libraries for model explanation (vip) and parallel computation processing engines.
@@ -875,7 +875,7 @@ df$income_level <- as.numeric(factor(df$income_level, levels = income_levels, or
 ### Time-Based Data Splitting & Resampling
 We split the data sequentially: the oldest 80% is used to build the predictive engine, while the newest 20% remains untouched to simulate real-world forward-testing. Cross-validation uses a rolling-origin time framework to map sliding windows.
 
-```{r time-splitting message=FALSE, warning=FALSE}
+```{r time-splitting, message=FALSE, warning=FALSE}
 set.seed(123)
 # Chronological Split: Oldest 80% for training, newest 20% for testing
 data_split <- initial_time_split(df, prop = 0.80)
@@ -896,7 +896,7 @@ folds <- rolling_origin(
   initial    = rows_per_month * 24,
   assess     = rows_per_month * 6,
   skip       = rows_per_month * 3,
-  cumulative = FALSE
+  cumulative = TRUE
 )
 ```
 
@@ -908,8 +908,8 @@ base_recipe <- recipe(avg_retail_price ~ ., data = train_data) %>%
   # Assign time/date trackers an "ID" role so they aren't used as direct linear predictors
   update_role(year, month, date, new_role = "ID") %>%
   step_novel(all_nominal_predictors()) %>%
-  step_dummy(all_nominal_predictors()) %>%
-  step_zv(all_predictors())
+  step_zv(all_predictors()) %>%
+  step_dummy(all_nominal_predictors())
 
 # Linear Model Spec
 linear_spec <- linear_reg(penalty = tune(), mixture = tune()) %>%
@@ -922,7 +922,7 @@ xgb_spec <- boost_tree(trees = tune(), tree_depth = tune(), learn_rate = tune())
   set_mode("regression")
 
 # Random Forest Spec
-rf_spec <- rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+rf_spec <- rand_forest(trees = tune(), min_n = tune()) %>% # Removed mtry = tune()
   set_engine("ranger", importance = "impurity") %>%
   set_mode("regression")
 
@@ -1065,11 +1065,26 @@ print(vip_plot)
 
 ---
 
-## Classsification Modeling
+## Classification Modeling
+
+Same as regression modeling, we will be building building 3 classification models, and compare their performance to select the best one for our analysis. The 3 models are:
+1. Multinomial Logistic Regression
+2. Random Forest
+3. Extreme Gradient Boosting (XGBoost)
+
+Multinomial Logistic Regression acts as a strong linear baseline, while Random Forest and XGBoost capture non-linear relationships and interactions. We will evaluate model performance using *accuracy*, *precision*, *recall*, *F1-score*, and *AUC-ROC* metrics to determine the best classification model for predicting fuel price.
+
+The workflow will be similar to the regression modeling section. The data will be encoded according to the features, and then split into training and testing sets. As the data is time-series in nature, time-based split is used to avoid data leakage. Cross-validation will also be used with a rolling origin approach to evaluate model performance during hyperparameter tuning by utilizing the `tidymodels` framework.
+
+`Tidymodels` is a collection of packages for modeling and statistical analysis in R. It provides a consistent interface for model specification, tuning, and evaluation across different algorithms, making it easier to compare the performance of the multinomial logistic regression, random forest, and XGBoost models in a structured manner. However, the cross-validation uses the `timetk` package to create time-based resampling splits, which is more suitable for time-series data. This allows to evaluate the models' performance in a way that respects the temporal order of the data, and ensuring that the model evaluation is realistic for forecasting tasks.
+
+
+
+
 
 ---
 
-## Classifcation Result
+## Classification Result
 
 ---
 

@@ -25,11 +25,11 @@ In this section, we load the required packages from the tidymodels framework alo
 library(readr)
 library(tidyverse)
 library(tidymodels)
-library(vip)         # For feature importance plots
-library(doParallel)  # For faster parallel processing
+library(vip) # For feature importance plots
+library(doParallel) # For faster parallel processing
 
 # Load the regression dataset
-df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
+df <- read_csv("../data_processed/Q1_Monthly_Regression_Data.csv")
 ```
 
 ---
@@ -38,7 +38,7 @@ df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
 Because this dataset tracks multiple countries across time (panel/time-series structure), random slicing would result in data leakage. We establish an explicit chronological timeline sorting by dates, and encode ordinal classifications scale adjustments.
 
 ```{r data-preparation}
-# Create a proper Date column and sort chronologically 
+# Create a proper Date column and sort chronologically
 df <- df %>%
   mutate(date = as.Date(paste(year, month, "01", sep = "-"))) %>%
   arrange(date)
@@ -48,9 +48,9 @@ tax_levels <- c("Low Tax", "Medium Tax", "High Tax")
 income_levels <- c("Low", "Middle", "High")
 
 # Encode categorical data types
-df$country    <- as.factor(df$country)
-df$region     <- as.factor(df$region)
-df$fuel_type  <- as.factor(df$fuel_type)
+df$country <- as.factor(df$country)
+df$region <- as.factor(df$region)
+df$fuel_type <- as.factor(df$fuel_type)
 
 # Convert ordered factors to numeric scales so ML algorithms can read their progression scale
 df$tax_category <- as.numeric(factor(df$tax_category, levels = tax_levels, ordered = TRUE))
@@ -67,23 +67,23 @@ set.seed(123)
 # Chronological Split: Oldest 80% for training, newest 20% for testing
 data_split <- initial_time_split(df, prop = 0.80)
 train_data <- training(data_split)
-test_data  <- testing(data_split)
+test_data <- testing(data_split)
 
 # Calculate how many rows equal exactly "1 Month" of data across all countries
-rows_per_month <- train_data %>% 
-  count(year, month) %>% 
-  summarise(avg_rows = mean(n)) %>% 
-  pull(avg_rows) %>% 
+rows_per_month <- train_data %>%
+  count(year, month) %>%
+  summarise(avg_rows = mean(n)) %>%
+  pull(avg_rows) %>%
   round()
 
 # Set up the rolling origin cross-validation based on rows
 # e.g., 24 months lookback window, 6 months evaluation window, sliding 3 months forward
 folds <- rolling_origin(
   train_data,
-  initial    = rows_per_month * 24, 
-  assess     = rows_per_month * 6,  
-  skip       = rows_per_month * 3,  
-  cumulative = FALSE                
+  initial    = rows_per_month * 24,
+  assess     = rows_per_month * 6,
+  skip       = rows_per_month * 3,
+  cumulative = TRUE
 )
 ```
 
@@ -95,9 +95,9 @@ We define a workflow preprocessing standard to handle new factor variations seam
 ```{r model-specifications}
 base_recipe <- recipe(avg_retail_price ~ ., data = train_data) %>%
   # Assign time/date trackers an "ID" role so they aren't used as direct linear predictors
-  update_role(year, month, date, new_role = "ID") %>% 
-  step_novel(all_nominal_predictors()) %>%
+  update_role(year, month, date, new_role = "ID") %>%
   step_dummy(all_nominal_predictors()) %>%
+  step_novel(all_nominal_predictors()) %>%
   step_zv(all_predictors())
 
 # Linear Model Spec
@@ -110,8 +110,8 @@ xgb_spec <- boost_tree(trees = tune(), tree_depth = tune(), learn_rate = tune())
   set_engine("xgboost") %>%
   set_mode("regression")
 
-# Random Forest Spec 
-rf_spec <- rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+# Random Forest Spec
+rf_spec <- rand_forest(trees = tune(), min_n = tune()) %>%
   set_engine("ranger", importance = "impurity") %>%
   set_mode("regression")
 
@@ -167,7 +167,7 @@ best_model_id <- tune_results %>%
 
 # Extract best tuning results and parameters for that winning model
 winning_tune_res <- tune_results %>% extract_workflow_set_result(best_model_id)
-best_parameters  <- winning_tune_res %>% select_best(metric = "rmse")
+best_parameters <- winning_tune_res %>% select_best(metric = "rmse")
 
 # Finalize the workflow with the winner's best hyperparameters
 final_wf <- tune_results %>%
@@ -176,8 +176,8 @@ final_wf <- tune_results %>%
 
 # Fit to the complete Training data and evaluate on the unseen holdout Test set
 final_fit <- last_fit(
-  final_wf, 
-  data_split, 
+  final_wf,
+  data_split,
   metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
 )
 ```
