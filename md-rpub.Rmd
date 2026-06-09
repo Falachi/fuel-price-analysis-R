@@ -15,20 +15,20 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Introduction
+# Introduction
 
 Volatilities in global energy markets introduce severe economic uncertainties, impacting consumer retail prices and national economic planning. Understanding the pass-through effect of crude oil price shocks onto localized retail markets requires a dual-pronged analytical framework.
 
 This study leverages historical data across distinct temporal granularities to address two core research questions using machine learning paradigms:
 
-#### Q1: Retail Price Prediction (Regression Model)
+### Q1: Retail Price Prediction (Regression Model)
 **Objective:** To predict future retail fuel prices based on the historical behavior of crude oil benchmarks.
 
 **Granularity:** Analyzed according to country by month to capture medium-term macroeconomic shifts and regional dependencies.
 
 **Approach:** Continuous numeric forecasting (Regression) to map upstream supply-side costs directly to downstream consumer impacts.
 
-#### Q2: Global Price Impact Assessment (Classification Model)
+### Q2: Global Price Impact Assessment (Classification Model)
 **Objective:** To build a classification architecture that analyzes the specific impact level of global fuel price spikes on localized retail adjustments.
 
 **Granularity:** Monitored by quarter to align with broader corporate and national budgetary cycles.
@@ -45,7 +45,7 @@ We will employ a standard machine learning framework which consist of:
 
 ---
 
-## Data Understanding
+# Data Understanding
 
 The data was gathered from Kaggle by the user BELBIN BENO R M titled [*Global Fuel Prices 2020–2026*](https://www.kaggle.com/datasets/belbino/global-fuel-prices-20202026). It was then imported to R with the default function. A preview of the first 5 records are as below:
 
@@ -108,19 +108,19 @@ For Q2 (Classification), the data provides the structural macro-context needed t
 
 ---
 
-## Data Cleaning
+# Data Cleaning
 
-### Executive Summary
+## Executive Summary
 This section details the reproducible data cleaning workflow applied to the dirty_fuel_data.csv dataset. The goal of this pipeline is to address duplicate rows, inconsistent categorical naming, character-to-numeric type mismatches, statistical outliers, and missing data imputation.
 
-### Clean Data Overview
+## Clean Data Overview
 Total Observations: 27,468
 Total Columns: 10
 Total Unique Countries Covered: 84
 Petrol Price Range: $0.010 - $6.779 USD/Liter
 Diesel Price Range: $0.010 - $6.240 USD/Liter
 
-### Part 1: Environment Setup
+## Part 1: Environment Setup
 First, we load the tidyverse suite (which includes dplyr, readr, stringr, and ggplot2 for efficient data manipulation) and import the raw dataset.
 
 ```{r load-data-hidden, echo=FALSE}
@@ -136,45 +136,45 @@ raw_data <- read_csv("data_raw/dirty_fuel_data.csv")
 glimpse(raw_data)
 ```
 
-### Part 2: Identifying "Dirty" Data
+## Part 2: Identifying "Dirty" Data
 Before writing the cleaning pipeline, we must profile the dataset to uncover quality, structure, and validity issues.
 
-#### A. Check for Missing Values (NAs)
+### A. Check for Missing Values (NAs)
 
 ```{r check-nas}
 print("Missing values per column:")
 colSums(is.na(raw_data))
 ```
 
-#### B. Check for Duplicates
+### B. Check for Duplicates
 
 ```{r check-duplicates}
 print("Number of duplicate rows:")
 sum(duplicated(raw_data))
 ```
 
-#### C. Check for Data Type Mismatches
+### C. Check for Data Type Mismatches
 
 ```{r check-types}
 # Verifying if the petrol price column is recognized as numeric
 class(raw_data$petrol_usd_liter)
 ```
 
-#### D. Check for Outliers
+### D. Check for Outliers
 
 ```{r check-outliers}
 # Summarizing diesel to identify mathematically impossible values
 summary(raw_data$diesel_usd_liter)
 ```
 
-#### E. Check for Inconsistent Naming
+### E. Check for Inconsistent Naming
 
 ```{r check-naming}
 # Identifying naming variants for categorical grouping
 unique(raw_data$country)
 ```
 
-### Part 3: The Data Cleaning Pipeline
+## Part 3: The Data Cleaning Pipeline
 
 Using a single dplyr pipe sequence, we apply five specific data-cleaning steps to ensure the integrity of the data without breaking spatial correlations.
 
@@ -213,7 +213,7 @@ cleaned_data <- raw_data %>%
   ungroup()
 ```
 
-### Part 4: Verification & Export
+## Part 4: Verification & Export
 Post-Cleaning Quality Assurance
 We run the data profiling checks again to verify that our dataset is now clean.
 
@@ -231,7 +231,7 @@ class(cleaned_data$petrol_usd_liter)
 summary(cleaned_data$diesel_usd_liter)
 ```
 
-### Save Final Dataset
+## Save Final Dataset
 The final, sparkling clean data is saved for analysis and downstream reporting.
 
 ```{r export-data, eval=FALSE}
@@ -239,7 +239,7 @@ write_csv(cleaned_data, "fuel_prices_cleaned_final.csv")
 print("Cleaning complete! Final data successfully exported.")
 ```
 
-### Appendix: Data Dictionary
+## Appendix: Data Dictionary
 The clean dataset consists of 10 variables outlined below:
 
 ```{r appendix-table, echo=FALSE}
@@ -275,11 +275,11 @@ knitr::kable(appendix_df, col.names = c("#", "Variable Name", "Data Type", "Desc
 
 ---
 
-## Exploratory Data Analysis
+# Exploratory Data Analysis
 
 We will explore the data to uncover relationships and patterns that can inform our modeling approach. This includes visualizations to understand the distribution of fuel prices, the relationship between global crude prices and local retail prices, the impact of each countries every quarter and how different countries and regions are affected by price changes throughout the quarters.
 
-### Initial Setup
+## Initial Setup
 
 ``` {r eda-setup-hidden, include=FALSE, echo=FALSE}
 source("scripts/format_clean_data.R")
@@ -304,9 +304,9 @@ class(clean_data$year_quarter) # yearqtr class
 
 This code extracts the year and quarter from the `date` column and creates a new column called `year_quarter`. This will allow us to analyze the data on a quarterly basis, which is important for our classification question. The `as.yearqtr` function from the `zoo` package is used to convert the date into a year-quarter format.
 
-### Global Trends
+## Global Trends
 
-#### Global Trends in Brent Crude Price
+### Global Trends in Brent Crude Price
 ``` {r global-trends-code}
 quarterly_brent <- clean_data |>
   group_by(year_quarter) |>
@@ -327,7 +327,7 @@ ggplot(quarterly_brent, aes(x = year_quarter, y = mean_brent)) +
 
 The fuel price is extremely volatile between 2020 Q1 and 2021 Q1. 2020 Q2 is the lowest point in the data before spiking to 100 from ~55. The average brent crude price then stay above 100 except for 2023 Q1 with a value of ~96. 2022 Q2 and 2026 Q1. 2022 Q2 to 2023 Q1 shows a down slope in price before slowly raising up throughout 2023 and 2024.
 
-#### Global Trends in All Fuel Types Price
+### Global Trends in All Fuel Types Price
 
 ``` {r global-trends-code-all-fuel}
 quarterly_fuels <- clean_data %>%
@@ -365,9 +365,9 @@ ggplot(quarterly_fuels, aes(x = year_quarter)) +
 
 The mean prices of all fuel types generally follow the Brent crude oil trend. Petrol maintained the highest average price across all quarters, followed by diesel and LPG. The similar movement patterns among fuel types suggest that their prices are positively correlated and influenced by similar market conditions.
 
-### Regional Analysis
+## Regional Analysis
 
-#### Regional Trends in Petrol Price by Quarter
+### Regional Trends in Petrol Price by Quarter
 ``` {r regional-trends-petrol-code, echo=FALSE}
 regional_petrol <- clean_data |>
   group_by(year_quarter, region) |>
@@ -398,7 +398,7 @@ Europe and Oceania showed to have the highest petrol price throughout the quarte
 
 This has some logic when comparing with proven oil reserves. Middle East is logical due to the high reserves in comparison to Europe and Oceania. There could also however be a relationship between fuel prices, and the countries' subsidy and income level. South America has high reserve countries such as Venuzuela and Brazil, though not as much as the Middle East. Therefore, a proper analysis of specific countries and its levels should be conducted.
 
-### Country Variability
+## Country Variability
 
 ``` {r country-variability-petrol-code, echo=FALSE}
 country_variability <- clean_data %>%
@@ -468,9 +468,9 @@ ggplot(
 
 The variability analysis showed that several countries experienced significantly higher fluctuations in petrol prices compared to others. Countries with higher standard deviation values indicate less stable fuel pricing trends over time, potentially due to weaker subsidy controls, economic instability, or stronger sensitivity to global crude oil price movements. In contrast, countries with lower variability demonstrated more stable fuel prices, which may suggest stronger regulatory or subsidy mechanisms.
 
-### Relationship Analysis
+## Relationship Analysis
 
-#### Petrol Price Distribution by Income Level
+### Petrol Price Distribution by Income Level
 
 ``` {r relationship-analysis-petrol-income, echo=FALSE}
 ggplot(
@@ -492,11 +492,12 @@ ggplot(
     legend.position = "none"
   )
 ```
+
 Looking at boxplot, we can see that the the distribution for each level overlaps with another. Both low and middle income level have a distribution between 0 and 4 USD/L, though low income level has a low median than middle income level. low income level is shown to have a normal distribution, while middle income is positively skewed. On the other hand, high income level has a huge distribution, between approximately 0 and 7 USD/L. It is skewed to the upper percentile, and some outliers can be seen in the lower percentile.
 
 The graph suggests that income level does play a role in the petrol prices, though a high income level is not always an indicator of a high petrol price. An example would be the UAE which has a high income level but low petrol price.
 
-#### Petrol Price Distribution by Subsidy Level
+### Petrol Price Distribution by Subsidy Level
 
 ``` {r relationship-analysis-petrol-subsidy, echo=FALSE}
 ggplot(
@@ -518,9 +519,10 @@ ggplot(
     legend.position = "none"
   )
 ```
+
 The boxplot shows a clear inverse relationship between subsidy level and petrol price. It shows a decrease in the petrol price distribution from low to very high with each level tightening the distribution. Some outliers are present in the medium and high, though no outliers are on low despite the wide distribution - suggesting that the distribution is spread apart on the 25% and 100% quartile.
 
-#### Correlation Matrix of Numeric Features
+### Correlation Matrix of Numeric Features
 
 ``` {r relationship-analysis-correlation, echo=FALSE}
 numeric_data <- clean_data %>%
@@ -547,15 +549,16 @@ corrplot(
   mar = c(0, 0, 2, 0) # Adds space at the top for the title
 )
 ```
+
 As expected, petrol, diesel, and LPG prices show extremely strong positive correlations with one another, with correlation coefficients close to 0.99. This indicates that the prices of different fuel types generally move together over time.
 
 In contrast, Brent crude oil prices show only weak positive correlations with the fuel prices, with coefficients around 0.25 to 0.26. This suggests that while crude oil prices may influence fuel prices, they are not the sole determinant of retail fuel pricing. Other factors such as subsidies, taxation policies, and regional economic conditions may also contribute significantly.
 
 Tax percentage shows almost no correlation with Brent crude oil prices but demonstrates moderate positive correlations of approximately 0.52 with fuel prices. This suggests that countries with higher fuel taxation tend to have higher retail fuel prices.
 
-### Quarterly Change Analysis
+## Quarterly Change Analysis
 
-#### Quarter to Quarter Change in Petrol Price
+### Quarter to Quarter Change in Petrol Price
 ``` {r quarterly-change-petrol-country-code, echo=FALSE}
 quarterly_country <- clean_data %>%
   group_by(country, year_quarter) %>%
@@ -574,6 +577,7 @@ quarterly_country <- quarterly_country %>%
     ) * 100
   )
 ```
+
 This code calculates the average petrol price for each country by quarter and then computes the percentage change in petrol price from one quarter to the next for each country. The `lag` function is used to access the previous quarter's mean petrol price for the percentage change calculation.
 
 ``` {r quarterly-change-petrol-country-plot, echo=FALSE}
@@ -601,7 +605,7 @@ The distribution of quarterly petrol price changes is concentrated mainly betwee
 
 Although extreme changes are less common, several larger positive changes above 30% are present. Negative changes also appear frequently, particularly within the -20% to -10% range, indicating that substantial price drops occurred in certain periods. Overall, the distribution suggests that petrol prices generally experience moderate quarterly fluctuations with occasional periods of high volatility.
 
-#### Impact Level Analysis by Quarter
+### Impact Level Analysis by Quarter
 
 ``` {r impact-level-analysis-code, echo=FALSE}
 quarterly_country <- quarterly_country %>%
@@ -643,7 +647,7 @@ ggplot(
 
 The impact level distribution shows that most observations fall within the low impact category, followed by medium and high impact levels. This is consistent with the previous histogram analysis, where the majority of quarterly petrol price changes were concentrated around the -10% to 10% range. High impact observations occur less frequently, indicating that extreme quarterly fuel price fluctuations are relatively uncommon.
 
-### Summary
+## Summary
 
 - Fuel prices generally followed the trend of Brent crude oil prices over time, with petrol consistently having the
   highest average price.
@@ -662,13 +666,13 @@ The impact level distribution shows that most observations fall within the low i
 
 ---
 
-## Data Preparation
+# Data Preparation
 
-### Introduction to Data Preparation
+## Introduction to Data Preparation
 
 This report documents the end-to-end data preparation workflow required to clean, transform, and engineer features from our raw fuel market data. The final output generates two highly specialized datasets: a monthly time-series file structured for regression modeling, and a quarterly file tailored for classification tasks.
 
-### Environment Setup and Data Ingestion
+## Environment Setup and Data Ingestion
 
 To build a reproducible data pipeline, we initialize our environment by loading the `tidyverse` library for core data manipulation and reshaping, alongside `lubridate` for specialized date-time parsing operations.
 
@@ -680,7 +684,7 @@ df <- read_csv("data_clean/fuel_prices_cleaned_final.csv")
 ```
 
 
-## Data Preprocessing
+# Data Preprocessing
 The raw input dataset tracks retail asset classes across multiple adjacent wide columns. To make this data compatible with tidy data principles, we first parse the text dates into structured date values ​​and then collapse the multiple fuel columns into a single categorical key-value pair.
 ```{r data-preprocessing}
 # 1. Date Conversion & Feature Extraction
@@ -704,7 +708,7 @@ df_long <- df_clean %>%
   )
 ```
 
-### Text Normalization and Formatting
+## Text Normalization and Formatting
 Reshaping variables automatically preserves technical column tags (such as _usd_liter). We apply regular expression string adjustments to strip out technical labels and normalize the text into title case format to ensure clean reporting aesthetics.
 ```{r text-normalization}
 df_long <- df_long %>%
@@ -715,7 +719,7 @@ df_long <- df_long %>%
   )
 ```
 
-### Feature Discretization and Binning
+## Feature Discretization and Binning
 
 To support multi-tier behavioral analysis, continuous numbers are grouped into distinct market classes. Retail rates and tax metrics are split into equal statistical thirds (tertiles) driven by data distributions, while crude oil indicators are segmented using deterministic macro-economic price blocks.
 
@@ -748,11 +752,11 @@ df_long <- df_long %>%
   )
 ```
 
-### Aggregation & Predictive Feature Engineering
+## Aggregation & Predictive Feature Engineering
 
 With foundational adjustments finalized, we construct our two final target analytical arrays.
 
-#### Dataset 1: Monthly Regression Pipeline
+### Dataset 1: Monthly Regression Pipeline
 
 This pipeline groups observations into monthly country footprints, preserving structural local parameters like tax classifications. We also extract a sequential lag index to evaluate historical, trailing market dependencies.
 ```{r monthly-regression-pipeline}
@@ -778,7 +782,7 @@ print("--- Q1 Monthly Data Ready ---")
 head(q1_monthly_data)
 ```
 
-#### Dataset 2: Quarterly Classification Pipeline
+### Dataset 2: Quarterly Classification Pipeline
 
 This sequence maps records onto a wider quarterly footprint. It handles the mathematical computation of quarter-over-quarter growth rates for local retail structures and global crude oil benchmarks, using these rates to establish a hard boundary for our classification target impact_level.
 
@@ -814,9 +818,9 @@ print("--- Q2 Quarterly Data Ready ---")
 head(q2_quarterly_data)
 ```
 
-### End Results
+## End Results
 
-#### Q1 Monthly Regression Dataset
+### Q1 Monthly Regression Dataset
 
 ```{r q1-monthly-data-preview, echo=FALSE}
 kable(q1_monthly_data[1:5, ], label = "Q1 Monthly Regression Dataset Preview")
@@ -835,7 +839,7 @@ The dataset features nine independent variables:
 
 The target variable is `avg_retail_price`.
 
-#### Q2 Quarterly Classification Dataset
+### Q2 Quarterly Classification Dataset
 ```{r q2-quarterly-data-preview, echo=FALSE}
 kable(q2_quarterly_data[1:5, ], label = "Q2 Quarterly Classification Dataset Preview")
 ```
@@ -854,7 +858,7 @@ The dataset features 11 independent variables:
 
 The target variable is `impact_level`.
 
-### Downstream Asset Exporting
+## Downstream Asset Exporting
 
 To ensure data continuity and freeze state baselines for independent downstream model validation, both structures are written out to dedicated local storage nodes.
 
@@ -868,12 +872,12 @@ print("Success! Both CSV files have been extracted and saved to your folder.")
 
 ---
 
-## Regression Modeling
+# Regression Modeling
 
-### Executive Summary
+## Executive Summary
 In this section of our analytics project, we developed an advanced machine learning pipeline to forecast global retail fuel prices. To capture complex, non-linear market behaviours such as regional policy variations and the lag effects of global oil shocks, we executed a comparative tournament between three different methodologies: Linear Regression (Elastic Net), Random Forest, and Extreme Gradient Boosting (XGBoost). 
 
-### Import Libraries & Data
+## Import Libraries & Data
 In this section, we load the required packages from the tidymodels framework alongside specialized libraries for model explanation (vip) and parallel computation processing engines.
 
 ```{r import-data, message=FALSE, warning=FALSE}
@@ -887,7 +891,7 @@ library() # For faster parallel processing
 df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
 ```
 
-### Data Preparation & Chronological Sorting
+## Data Preparation & Chronological Sorting
 Because this dataset tracks multiple countries across time (panel/time-series structure), random slicing would result in data leakage. We establish an explicit chronological timeline sorting by dates, and encode ordinal classifications scale adjustments.
 
 ```{r data-preparation-encoding, message=FALSE, warning=FALSE}
@@ -912,7 +916,7 @@ df$income_level <- as.numeric(factor(df$income_level, levels = income_levels, or
 
 ---
 
-### Time-Based Data Splitting & Resampling
+## Time-Based Data Splitting & Resampling
 We split the data sequentially: the oldest 80% is used to build the predictive engine, while the newest 20% remains untouched to simulate real-world forward-testing. Cross-validation uses a rolling-origin time framework to map sliding windows.
 
 ```{r time-splitting, message=FALSE, warning=FALSE}
@@ -940,7 +944,7 @@ folds <- rolling_origin(
 )
 ```
 
-### Recipe & Model Specifications
+## Recipe & Model Specifications
 We define a workflow preprocessing standard to handle new factor variations seamlessly via dummy variable steps. We set up an engine testing matrix across Elastic Net Linear Regressions, XGBoost, and Random Forest specifications.
 
 ```{r model-specifications}
@@ -974,7 +978,7 @@ model_workflows <- workflow_set(
 )
 ```
 
-### Hyperparameter Tuning
+## Hyperparameter Tuning
 We run grid search matrices across all 3 structural workflow designs.
 
 ```{r grid-tuning, message=FALSE, warning=FALSE, cache=TRUE}
@@ -1003,14 +1007,14 @@ tune_results <- model_workflows %>%
 stopCluster(cl)
 ```
 
-#### Resampling Validation Summary Plot
+### Resampling Validation Summary Plot
 This chart details the cross-validation score summaries across each evaluated grid option.
 
 ```{r tuning-summary-plot, fig.width=8, fig.height=5}
 autoplot(tune_results, metric = "rmse")
 ```
 
-### Automated Winning Model Extraction
+## Automated Winning Model Extraction
 The system reads across the finalised cross-validation profiles, filters down to select the architecture minimising RMSE, and assigns its hyperparameter choices onto the holdout performance verification test set.
 
 ```{r winning-model-extraction}
@@ -1044,7 +1048,7 @@ The algorithm has dynamically selected **`r best_model_id`** as the winning mode
 knitr::kable(best_parameters, caption = "Winning Model Hyperparameter Values")
 ```
 
-#### Unseen Holdout Test Performance Metrics
+### Unseen Holdout Test Performance Metrics
 The table below presents the model's accuracy scores evaluated on the holdout test phase across all 5 requested evaluation metrics:
 
 ```{r print-final-metrics}
@@ -1052,8 +1056,8 @@ final_metrics <- collect_metrics(final_fit)
 knitr::kable(final_metrics, caption = "Holdout Test Set Metric Diagnostics")
 ```
 
-### Output Generation
-#### Scatterplot: Actual vs. Predicted Prices
+## Output Generation
+### Scatterplot: Actual vs. Predicted Prices
 This chart verifies goodness-of-fit. Points centering tightly around the 45-degree diagonal path illustrate a robust baseline alignment.
 
 ```{r actual-vs-predicted-plot, fig.width=7, fig.height=5}
@@ -1072,7 +1076,7 @@ scatterplot <- ggplot(predictions_df, aes(x = avg_retail_price, y = .pred)) +
 print(scatterplot)
 ```
 
-#### Residuals Analysis Plot
+### Residuals Analysis Plot
 Residual points scattered randomly around the center line indicate that the predictive errors remain unbiased across the scale.
 
 ```{r residuals-analysis-plot, fig.width=7, fig.height=5}
@@ -1091,7 +1095,7 @@ residuals_plot <- ggplot(predictions_df, aes(x = .pred, y = residual)) +
 print(residuals_plot)
 ```
 
-#### Relative Feature Importance Plot
+### Relative Feature Importance Plot
 This chart highlights which specific macroeconomic variations, regional variables, or tax policies dominate the winning model's internal prediction splits.
 
 ```{r feature-importance-plot, fig.width=7, fig.height=5}
@@ -1110,11 +1114,11 @@ print(vip_plot)
 
 ---
 
-## Regression Result
+# Regression Result
 
 ---
 
-## Classification Modeling
+# Classification Modeling
 
 Same as regression modeling, we will be building building 3 classification models, and compare their performance to select the best one for our analysis. The 3 models are:
 1. Multinomial Logistic Regression
@@ -1127,11 +1131,11 @@ The workflow will be similar to the regression modeling section. The data will b
 
 `Tidymodels` is a collection of packages for modeling and statistical analysis in R. It provides a consistent interface for model specification, tuning, and evaluation across different algorithms, making it easier to compare the performance of the multinomial logistic regression, random forest, and XGBoost models in a structured manner. It also has `recipe` which provides a consistent interface for data preprocessing. However, the cross-validation uses the `timetk` package to create time-based resampling splits, which is more suitable for time-series data. This allows to evaluate the models' performance in a way that respects the temporal order of the data, and ensuring that the model evaluation is realistic for forecasting tasks.
 
-### Data Preparation
+## Data Preparation
 
 This section will cover the data preparation steps for the classification modeling. It will be using the quarterly dataset that we prepared in the data preparation section, which contains the `impact_level` variable as our target for classification. This step includes splitting the data into training and testing sets, encoding categorical variables, and setting up the cross-validation strategy for time-series data.
 
-#### Import Libraries & Data
+### Import Libraries & Data
 ```{r import-classification-data, message=FALSE, warning=FALSE}
 library(tidymodels)
 library(tidyverse)
@@ -1149,7 +1153,7 @@ library(timetk)
 - `tsibble`: A package for working with time-series data in a tidy format, allowing for easy manipulation and analysis of time-indexed data.
 - `timetk`: A package for working with time-series data, providing functions for creating time-based resampling splits.
 
-#### Encode Data and Create Time-Based Splits
+### Encode Data and Create Time-Based Splits
 
 ``` {r classification-data-preparation, message=FALSE, warning=FALSE}
 df <- read_csv("data_processed/Q2_Quarterly_Classification_Data.csv")
@@ -1200,7 +1204,7 @@ glimpse(df_ts)
 range(df_ts$time_index)
 ```
 
-#### Splitting the Data
+### Splitting the Data
 
 ``` {r classification-data-splitting-setup, include=FALSE}
 set.seed(123)
@@ -1225,7 +1229,7 @@ train_data <- train_data_raw |>
   mutate(time_index = as.Date(time_index)) # Converts "2020 Q1" to "2020-01-01"
 ```
 
-#### Cross-Validation Setup
+### Cross-Validation Setup
 
 ``` {r classification-cross-validation-setup, message=FALSE, warning=FALSE}
 folds <- time_series_cv(
@@ -1254,9 +1258,9 @@ A data preprocessing recipe was constructed to prepare the features for all mode
 3. All nominal predictors are then converted into dummy variables using one-hot encoding.
 4. Finally, a zero-variance filter `step_zv()` removes any constant predictors that could destabilize the training process to ensure a clean and mathematically stable dataset for modeling.
 
-### Multinomial Logistic Regression
+## Multinomial Logistic Regression
 
-#### Objective
+### Objective
 
 **Q2 Classification:** To build classification model that analyse impact
 level of global fuel price to countries fuel price changes by quarter.**
@@ -1276,9 +1280,9 @@ In this model, the predictors used are quarter, country, fuel_type, and
 crude_pct_change. These variables are used to examine whether quarterly
 crude oil price movements and country-level fuel information can
 
-#### Building the Model
+### Building the Model
 
-##### Load Required Libraries
+#### Load Required Libraries
 
 ``` {r load-libraries, message=FALSE, warning=FALSE}
 library(dplyr)
@@ -1288,7 +1292,7 @@ library(ggplot2)
 library(pROC)
 ```
 
-##### Load training and testing datasets
+#### Load training and testing datasets
 
 ``` {r load-datasets, message=FALSE, warning=FALSE}
 train_df <- read.csv("data_split/classification/train_df.csv")
@@ -1296,7 +1300,7 @@ train_df <- read.csv("data_split/classification/train_df.csv")
 test_df <- read.csv("data_split/classification/test_df.csv")
 ```
 
-##### Data Preparation
+### Data Preparation
 
 ``` {r data-preparation, message=FALSE, warning=FALSE}
 # Remove extra spaces from the target variable
@@ -1388,7 +1392,7 @@ cat("Testing rows used:", nrow(test_model), "n")
 
 The variable impact_level was used as the target variable. The predictors selected were quarter, country, fuel_type, and crude_pct_change_scaled. The numerical variable crude_pct_change was scaled to improve model stability.
 
-##### Model Training
+### Model Training
 
 ``` {r model-training, message=FALSE, warning=FALSE, cache=TRUE}
 set.seed(123)
@@ -1407,7 +1411,7 @@ multi_log_model <- multinom(
 summary(multi_log_model)
 ```
 
-##### Model Prediction
+#### Model Prediction
 
 ``` {r model-prediction, message=FALSE, warning=FALSE}
 # Predict class labels on the test data
@@ -1436,9 +1440,9 @@ pred_prob <- predict(
 knitr::kable(head(pred_prob))
 ```
 
-##### Model Performance
+### Model Performance
 
-###### Confusion Matrix
+#### Confusion Matrix
 
 ``` {r confusion-matrix, message=FALSE, warning=FALSE}
 conf_matrix <- confusionMatrix(
@@ -1470,7 +1474,7 @@ ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
   theme_minimal()
 ```
 
-###### Accuracy, Precision, Recall and F1-Score
+#### Accuracy, Precision, Recall and F1-Score
 
 ``` {r performance-metrics}
 # Extract overall accuracy
@@ -1518,7 +1522,7 @@ macro_metrics
 
 The accuracy shows the overall proportion of correctly classified observations. Precision shows how reliable the model is when it predicts a specific impact class. Recall shows how well the model identifies actual cases from each class. The F1-score provides a balanced measure between precision and recall.
 
-###### Multiclass ROC and AUC
+#### Multiclass ROC and AUC
 
 ``` {r multiclass-roc}
 multi_auc <- multiclass.roc(
@@ -1533,7 +1537,7 @@ print(multi_auc_value)
 
 The multiclass AUC measures how well the model separates the three impact levels overall. A higher AUC value indicates stronger classification performance.
 
-###### One-vs-All ROC Curves
+#### One-vs-All ROC Curves
 
 ``` {r one-vs-all-roc}
 # One-vs-All ROC curve for Low Impact
@@ -1594,7 +1598,7 @@ legend(
 )
 ```
 
-###### Model Results and Interpretation
+#### Model Results and Interpretation
 
 ``` {r model-results-interpretation, echo=FALSE}
 metrics <- c(
@@ -1629,9 +1633,9 @@ The model also achieved a **Multiclass AUC of 0.6838**, indicating a moderate ab
 
 Overall, the Multinomial Logistic Regression model provides a useful baseline for the classification problem. It is able to identify Low Impact cases relatively well and shows moderate ability in detecting High Impact cases. However, it struggles to classify Medium Impact observations accurately. This indicates that the relationship between global crude oil price changes and country-level fuel price impact may be more complex than what a linear classification model can fully capture. Therefore, more flexible machine learning models such as Random Forest or XGBoost may be better suited to improve classification performance.
 
-### Random Forest Classifier 
+## Random Forest Classifier 
 
-#### Objective
+### Objective
 
 The objective of this classification model is to predict the **impact level of global fuel price changes** on countries’ fuel price changes by quarter.  
 The target variable `impact_level` has three categories: *Low Impact*, *Medium Impact*, and *High Impact*.  
@@ -1646,7 +1650,7 @@ In this project, the predictors include:
 - **Fuel type** (petrol, diesel, LPG)  
 - **Crude oil percentage change** (global market fluctuations)  
 
-#### Methods
+### Methods
 
 ```{r random-forest-methods, message=FALSE, warning=FALSE}
 # Load libraries
@@ -1671,7 +1675,7 @@ test_df$impact_level <- factor(test_df$impact_level,
 )
 ```
 
-##### Results
+#### Results
 ```{r random-forest-results, message=FALSE, warning=FALSE}
 # Check class distribution
 cat("Train class counts:\n")
@@ -1680,7 +1684,7 @@ cat("Test class counts:\n")
 print(table(test_df$impact_level))
 ```
 
-#### Model Training
+### Model Training
 
 ```{r random-forest-training, message=FALSE, warning=FALSE, cache=TRUE}
 # Train Random Forest model
@@ -1695,13 +1699,13 @@ rf_model <- randomForest(
 )
 ```
 
-#### Model Evaluation
+### Model Evaluation
 ```{r random-forest-evaluation, message=FALSE, warning=FALSE}
 # Predict on test set
 predictions <- predict(rf_model, newdata = test_df)
 ```
 
-##### Confusion Matrix
+#### Confusion Matrix
 ```{r random-forest-confusion-matrix, message=FALSE, warning=FALSE}
 cm <- confusionMatrix(predictions, test_df$impact_level)
 print(cm)
@@ -1709,7 +1713,7 @@ print(cm)
 
 The model achieves an overall accuracy of 70.4%. It performs very well at identifying Low Impact cases, correctly predicting 1,577 of them. However, it experiences noticeable friction with Medium Impact cases, frequently misclassifying them as Low Impact.
 
-##### Per class metrics
+#### Per class metrics
 ```{r random-forest-per-class-metrics, message=FALSE, warning=FALSE}
 precision <- cm$byClass[, "Pos Pred Value"]
 recall <- cm$byClass[, "Sensitivity"]
@@ -1726,7 +1730,7 @@ print(metrics_df)
 ```
 The per-class metrics confirm that the model is highly reliable for Low Impact predictions, yielding a strong F1-Score of 0.801 and a recall of 0.891. Conversely, Medium Impact is the weakest category with an F1-Score of 0.514, showing that the model requires sharper decision boundaries to separate minor baseline shifts from low-level activity.
 
-##### Variable Importance Plot
+#### Variable Importance Plot
 ```{r random-forest-variable-importance, message=FALSE, warning=FALSE}
 imp <- importance(rf_model)
 imp_df <- data.frame(
@@ -1749,7 +1753,7 @@ ggplot(imp_df, aes(
 ```
 Changes in global crude oil prices are by far the most important factor driving the model's predictions, completely outperforming everything else. On the other hand, the fuel type variable actually scores below zero. This indicates that knowing whether a fuel is petrol or diesel provides no real predictive value and might even confuse the model, making it a prime candidate to be removed in future versions.
 
-##### Class distribution plot
+#### Class distribution plot
 ```{r random-forest-class-distribution, message=FALSE, warning=FALSE}
 ggplot(train_df, aes(x = impact_level)) +
   geom_bar(fill = "steelblue") +
@@ -1763,7 +1767,7 @@ ggplot(test_df, aes(x = impact_level)) +
 ```
 The distribution plots reveal a critical shift between our datasets. While the training set is relatively well-balanced across all three tiers, the testing set is heavily skewed toward Low Impact observations (1,770 cases vs. only 574 High Impact cases). This imbalance in the test data heavily influences our final accuracy metrics.
 
-##### Confusion matrix heatmap
+#### Confusion matrix heatmap
 ```{r random-forest-confusion-matrix-classification, message=FALSE, warning=FALSE}
 cm_table <- as.data.frame(cm$table)
 ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
@@ -1775,10 +1779,10 @@ ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
 ```
 The heatmap visually isolates where the model succeeds and where it loses track. The deep blue square at the bottom left highlights the model's core strength: correctly identifying Low Impact cases 1,577 times. However, the lighter tile right next to it clearly flags our primary weak point, showing that 468 actual Medium Impact cases were incorrectly swept into the Low Impact category.
 
-#### Conclusion
+### Conclusion
 The Random Forest model provides a solid baseline with an overall accuracy of 70.4%, proving highly effective at identifying low-impact market shifts. Because global crude oil trends completely dominate the model's decision tree splits while product specifics like fuel type offer no actual value, future work should focus on simplifying the feature space. Dropping the fuel type variable and introducing specific country by crude interaction terms will be the most direct path to fixing the overlap between Low and Medium impact classes.
 
-### Extreme Gradient Boosting (XGBoost) Classifier
+## Extreme Gradient Boosting (XGBoost) Classifier
 
 ``` {r xgboost-classification-setup, include=FALSE}
 library(tidymodels)
@@ -1792,7 +1796,7 @@ set.seed(123)
 
 Xtreme Gradient Boosting (XGBoost) is a powerful machine learning algorithm that has gained popularity for its performance and efficiency in classification tasks. It is an implementation of gradient boosting that uses decision trees as base learners. XGBoost is designed to optimize both speed and performance, making it a strong candidate for our classification problem.
 
-#### Building the Model
+### Building the Model
 
 ``` {r xgboost-classification-model-spec, message=FALSE, warning=FALSE}
 xgboost_spec <- boost_tree(
@@ -1845,6 +1849,7 @@ best_xgboost <- xgboost_tune |>
 ```
 
 **Parameters:**
+
 - `min_n`: 24
   - This suggests that the model performs best when each leaf node has at least 24 observations.
 - `tree_depth`: 4
@@ -1852,7 +1857,7 @@ best_xgboost <- xgboost_tune |>
 - `learn_rate`: 0.001
   - This very low learning rate suggests that the model benefits from a slow and steady learning process.
 
-#### Model Metrics
+### Model Metrics
 
 ``` {r xgboost-classification-metrics-setup, include=FALSE}
 library(bundle)
@@ -1895,7 +1900,7 @@ The model demonstrates outstanding performance across all evaluated classificati
 
 The model performs exceptionally well across all individual classes as the macro-averaged metrics are virtually identical to the overall accuracy.
 
-##### Confusion Matrix
+#### Confusion Matrix
 
 ``` {r xgboost-classification-confusion-matrix, echo=FALSE, message=FALSE, warning=FALSE}
 # Get and plot the confusion matrix
@@ -1914,8 +1919,8 @@ The confusion matrix reveals how further robust is the model. Only a total of 17
 
 ---
 
-## Classification Result
+# Classification Result
 
 ---
 
-## Conclusion
+# Conclusion

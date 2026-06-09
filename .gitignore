@@ -11,3 +11,4 @@ Data Preparation
 replace-html.ps1
 md-rpub_cache/
 md-rpub_files/
+*.7z
