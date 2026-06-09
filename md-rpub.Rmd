@@ -830,10 +830,10 @@ print("Success! Both CSV files have been extracted and saved to your folder.")
 
 ## Regression Modeling
 
-### 1. Executive Summary
+### Executive Summary
 In this module of our analytics project, we developed an advanced machine learning pipeline to forecast global retail fuel prices. To capture complex, non-linear market behaviours such as regional policy variations and the lag effects of global oil shocks, we executed a comparative tournament between three different methodologies: Linear Regression (Elastic Net), Random Forest, and Extreme Gradient Boosting (XGBoost). 
 
-## 2. Import Libraries & Data
+### Import Libraries & Data
 In this section, we load the required packages from the tidymodels framework alongside specialized libraries for model explanation (vip) and parallel computation processing engines.
 
 ```{r import-data, message=FALSE, warning=FALSE}
@@ -847,12 +847,10 @@ library(doParallel) # For faster parallel processing
 df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
 ```
 
----
-
-## 3. Data Preparation & Chronological Sorting
+### Data Preparation & Chronological Sorting
 Because this dataset tracks multiple countries across time (panel/time-series structure), random slicing would result in data leakage. We establish an explicit chronological timeline sorting by dates, and encode ordinal classifications scale adjustments.
 
-```{r data-preparation}
+```{r data-preparation-encoding, message=FALSE, warning=FALSE}
 # Create a proper Date column and sort chronologically
 df <- df %>%
   mutate(date = as.Date(paste(year, month, "01", sep = "-"))) %>%
@@ -874,10 +872,10 @@ df$income_level <- as.numeric(factor(df$income_level, levels = income_levels, or
 
 ---
 
-## 4. Time-Based Data Splitting & Resampling
+### Time-Based Data Splitting & Resampling
 We split the data sequentially: the oldest 80% is used to build the predictive engine, while the newest 20% remains untouched to simulate real-world forward-testing. Cross-validation uses a rolling-origin time framework to map sliding windows.
 
-```{r time-splitting}
+```{r time-splitting message=FALSE, warning=FALSE}
 set.seed(123)
 # Chronological Split: Oldest 80% for training, newest 20% for testing
 data_split <- initial_time_split(df, prop = 0.80)
@@ -902,9 +900,7 @@ folds <- rolling_origin(
 )
 ```
 
----
-
-## 5. Recipe & Model Specifications
+### Recipe & Model Specifications
 We define a workflow preprocessing standard to handle new factor variations seamlessly via dummy variable steps. We set up an engine testing matrix across Elastic Net Linear Regressions, XGBoost, and Random Forest specifications.
 
 ```{r model-specifications}
@@ -938,9 +934,7 @@ model_workflows <- workflow_set(
 )
 ```
 
----
-
-## 6. Hyperparameter Tuning (Parallelised)
+### Hyperparameter Tuning (Parallelised)
 We run grid search matrices across all 3 structural workflow designs. Multi-core cluster architectures are triggered to decrease model cross-validation training execution runtimes.
 
 ```{r grid-tuning}
@@ -960,16 +954,14 @@ tune_results <- model_workflows %>%
 stopCluster(cl) # Terminate parallel clusters
 ```
 
-### Resampling Validation Summary Plot
+#### Resampling Validation Summary Plot
 This chart details the cross-validation score summaries across each evaluated grid option.
 
 ```{r tuning-summary-plot, fig.width=8, fig.height=5}
 autoplot(tune_results, metric = "rmse")
 ```
 
----
-
-## 7. Automated Winning Model Extraction
+### Automated Winning Model Extraction
 The system reads across the finalised cross-validation profiles, filters down to select the architecture minimising RMSE, and assigns its hyperparameter choices onto the holdout performance verification test set.
 
 ```{r winning-model-extraction}
@@ -1003,7 +995,7 @@ The algorithm has dynamically selected **`r best_model_id`** as the winning mode
 knitr::kable(best_parameters, caption = "Winning Model Hyperparameter Values")
 ```
 
-### Unseen Holdout Test Performance Metrics
+#### Unseen Holdout Test Performance Metrics
 The table below presents the model's accuracy scores evaluated on the holdout test phase across all 5 requested evaluation metrics:
 
 ```{r print-final-metrics}
@@ -1011,10 +1003,8 @@ final_metrics <- collect_metrics(final_fit)
 knitr::kable(final_metrics, caption = "Holdout Test Set Metric Diagnostics")
 ```
 
----
-
-## 8. Output Generation
-### A. Scatterplot: Actual vs. Predicted Prices
+### Output Generation
+#### Scatterplot: Actual vs. Predicted Prices
 This chart verifies goodness-of-fit. Points centering tightly around the 45-degree diagonal path illustrate a robust baseline alignment.
 
 ```{r actual-vs-predicted-plot, fig.width=7, fig.height=5}
@@ -1033,7 +1023,7 @@ scatterplot <- ggplot(predictions_df, aes(x = avg_retail_price, y = .pred)) +
 print(scatterplot)
 ```
 
-### B. Residuals Analysis Plot
+#### Residuals Analysis Plot
 Residual points scattered randomly around the center line indicate that the predictive errors remain unbiased across the scale.
 
 ```{r residuals-analysis-plot, fig.width=7, fig.height=5}
@@ -1052,7 +1042,7 @@ residuals_plot <- ggplot(predictions_df, aes(x = .pred, y = residual)) +
 print(residuals_plot)
 ```
 
-### C. Relative Feature Importance Plot
+#### Relative Feature Importance Plot
 This chart highlights which specific macroeconomic variations, regional variables, or tax policies dominate the winning model's internal prediction splits.
 
 ```{r feature-importance-plot, fig.width=7, fig.height=5}
@@ -1068,3 +1058,19 @@ vip_plot <- vip(final_model_fit, num_features = 10, geom = "point") +
   )
 print(vip_plot)
 ```
+
+---
+
+## Regression Result
+
+---
+
+## Classsification Modeling
+
+---
+
+## Classifcation Result
+
+---
+
+## Conclusion
