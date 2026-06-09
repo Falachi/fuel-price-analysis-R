@@ -830,3 +830,241 @@ print("Success! Both CSV files have been extracted and saved to your folder.")
 
 ## Regression Modeling
 
+### 1. Executive Summary
+In this module of our analytics project, we developed an advanced machine learning pipeline to forecast global retail fuel prices. To capture complex, non-linear market behaviours such as regional policy variations and the lag effects of global oil shocks, we executed a comparative tournament between three different methodologies: Linear Regression (Elastic Net), Random Forest, and Extreme Gradient Boosting (XGBoost). 
+
+## 2. Import Libraries & Data
+In this section, we load the required packages from the tidymodels framework alongside specialized libraries for model explanation (vip) and parallel computation processing engines.
+
+```{r import-data, message=FALSE, warning=FALSE}
+library(readr)
+library(tidyverse)
+library(tidymodels)
+library(vip) # For feature importance plots
+library(doParallel) # For faster parallel processing
+
+# Load the regression dataset
+df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
+```
+
+---
+
+## 3. Data Preparation & Chronological Sorting
+Because this dataset tracks multiple countries across time (panel/time-series structure), random slicing would result in data leakage. We establish an explicit chronological timeline sorting by dates, and encode ordinal classifications scale adjustments.
+
+```{r data-preparation}
+# Create a proper Date column and sort chronologically
+df <- df %>%
+  mutate(date = as.Date(paste(year, month, "01", sep = "-"))) %>%
+  arrange(date)
+
+# Define levels for ordinal categories
+tax_levels <- c("Low Tax", "Medium Tax", "High Tax")
+income_levels <- c("Low", "Middle", "High")
+
+# Encode categorical data types
+df$country <- as.factor(df$country)
+df$region <- as.factor(df$region)
+df$fuel_type <- as.factor(df$fuel_type)
+
+# Convert ordered factors to numeric scales so ML algorithms can read their progression scale
+df$tax_category <- as.numeric(factor(df$tax_category, levels = tax_levels, ordered = TRUE))
+df$income_level <- as.numeric(factor(df$income_level, levels = income_levels, ordered = TRUE))
+```
+
+---
+
+## 4. Time-Based Data Splitting & Resampling
+We split the data sequentially: the oldest 80% is used to build the predictive engine, while the newest 20% remains untouched to simulate real-world forward-testing. Cross-validation uses a rolling-origin time framework to map sliding windows.
+
+```{r time-splitting}
+set.seed(123)
+# Chronological Split: Oldest 80% for training, newest 20% for testing
+data_split <- initial_time_split(df, prop = 0.80)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+
+# Calculate how many rows equal exactly "1 Month" of data across all countries
+rows_per_month <- train_data %>%
+  count(year, month) %>%
+  summarise(avg_rows = mean(n)) %>%
+  pull(avg_rows) %>%
+  round()
+
+# Set up the rolling origin cross-validation based on rows
+# e.g., 24 months lookback window, 6 months evaluation window, sliding 3 months forward
+folds <- rolling_origin(
+  train_data,
+  initial    = rows_per_month * 24,
+  assess     = rows_per_month * 6,
+  skip       = rows_per_month * 3,
+  cumulative = FALSE
+)
+```
+
+---
+
+## 5. Recipe & Model Specifications
+We define a workflow preprocessing standard to handle new factor variations seamlessly via dummy variable steps. We set up an engine testing matrix across Elastic Net Linear Regressions, XGBoost, and Random Forest specifications.
+
+```{r model-specifications}
+base_recipe <- recipe(avg_retail_price ~ ., data = train_data) %>%
+  # Assign time/date trackers an "ID" role so they aren't used as direct linear predictors
+  update_role(year, month, date, new_role = "ID") %>%
+  step_novel(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_zv(all_predictors())
+
+# Linear Model Spec
+linear_spec <- linear_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet") %>%
+  set_mode("regression")
+
+# XGBoost Spec
+xgb_spec <- boost_tree(trees = tune(), tree_depth = tune(), learn_rate = tune()) %>%
+  set_engine("xgboost") %>%
+  set_mode("regression")
+
+# Random Forest Spec
+rf_spec <- rand_forest(mtry = tune(), trees = tune(), min_n = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("regression")
+
+# Combine into a Workflow Set
+model_workflows <- workflow_set(
+  preproc = list(base_rec = base_recipe),
+  models = list(linear = linear_spec, xgb = xgb_spec, rf = rf_spec),
+  cross = TRUE
+)
+```
+
+---
+
+## 6. Hyperparameter Tuning (Parallelised)
+We run grid search matrices across all 3 structural workflow designs. Multi-core cluster architectures are triggered to decrease model cross-validation training execution runtimes.
+
+```{r grid-tuning}
+cl <- makePSOCKcluster(parallel::detectCores() - 1)
+registerDoParallel(cl)
+
+set.seed(123)
+tune_results <- model_workflows %>%
+  workflow_map(
+    fn = "tune_grid",
+    seed = 123,
+    resamples = folds,
+    grid = 10,
+    metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
+  )
+
+stopCluster(cl) # Terminate parallel clusters
+```
+
+### Resampling Validation Summary Plot
+This chart details the cross-validation score summaries across each evaluated grid option.
+
+```{r tuning-summary-plot, fig.width=8, fig.height=5}
+autoplot(tune_results, metric = "rmse")
+```
+
+---
+
+## 7. Automated Winning Model Extraction
+The system reads across the finalised cross-validation profiles, filters down to select the architecture minimising RMSE, and assigns its hyperparameter choices onto the holdout performance verification test set.
+
+```{r winning-model-extraction}
+# Programmatically find the absolute best model ID based on the lowest validation RMSE
+best_model_id <- tune_results %>%
+  rank_results(rank_metric = "rmse", select_best = TRUE) %>%
+  filter(rank == 1) %>%
+  slice(1) %>%
+  pull(wflow_id)
+
+# Extract best tuning results and parameters for that winning model
+winning_tune_res <- tune_results %>% extract_workflow_set_result(best_model_id)
+best_parameters <- winning_tune_res %>% select_best(metric = "rmse")
+
+# Finalize the workflow with the winner's best hyperparameters
+final_wf <- tune_results %>%
+  extract_workflow(best_model_id) %>%
+  finalize_workflow(best_parameters)
+
+# Fit to the complete Training data and evaluate on the unseen holdout Test set
+final_fit <- last_fit(
+  final_wf,
+  data_split,
+  metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
+)
+```
+
+The algorithm has dynamically selected **`r best_model_id`** as the winning model structure. Below are its optimal tuned parameters:
+
+```{r print-best-parameters}
+knitr::kable(best_parameters, caption = "Winning Model Hyperparameter Values")
+```
+
+### Unseen Holdout Test Performance Metrics
+The table below presents the model's accuracy scores evaluated on the holdout test phase across all 5 requested evaluation metrics:
+
+```{r print-final-metrics}
+final_metrics <- collect_metrics(final_fit)
+knitr::kable(final_metrics, caption = "Holdout Test Set Metric Diagnostics")
+```
+
+---
+
+## 8. Output Generation
+### A. Scatterplot: Actual vs. Predicted Prices
+This chart verifies goodness-of-fit. Points centering tightly around the 45-degree diagonal path illustrate a robust baseline alignment.
+
+```{r actual-vs-predicted-plot, fig.width=7, fig.height=5}
+predictions_df <- collect_predictions(final_fit)
+
+scatterplot <- ggplot(predictions_df, aes(x = avg_retail_price, y = .pred)) +
+  geom_point(alpha = 0.4, color = "midnightblue") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed", linewidth = 1) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Actual vs. Predicted Retail Prices",
+    subtitle = paste("Winning Model Architecture:", best_model_id),
+    x = "Actual Retail Price",
+    y = "Predicted Retail Price"
+  )
+print(scatterplot)
+```
+
+### B. Residuals Analysis Plot
+Residual points scattered randomly around the center line indicate that the predictive errors remain unbiased across the scale.
+
+```{r residuals-analysis-plot, fig.width=7, fig.height=5}
+predictions_df <- predictions_df %>% mutate(residual = avg_retail_price - .pred)
+
+residuals_plot <- ggplot(predictions_df, aes(x = .pred, y = residual)) +
+  geom_point(alpha = 0.4, color = "darkred") +
+  geom_hline(yintercept = 0, color = "black", linetype = "dashed", linewidth = 1) +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Model Residuals Plot",
+    subtitle = "Points should be randomly scattered around the 0 line",
+    x = "Predicted Price (Fitted Values)",
+    y = "Residual (Actual - Predicted)"
+  )
+print(residuals_plot)
+```
+
+### C. Relative Feature Importance Plot
+This chart highlights which specific macroeconomic variations, regional variables, or tax policies dominate the winning model's internal prediction splits.
+
+```{r feature-importance-plot, fig.width=7, fig.height=5}
+final_model_fit <- extract_fit_parsnip(final_fit)
+
+vip_plot <- vip(final_model_fit, num_features = 10, geom = "point") +
+  theme_minimal(base_size = 12) +
+  labs(
+    title = "Top 10 Most Important Predictors",
+    subtitle = paste("Extracted dynamically from:", best_model_id),
+    x = "Predictors/Features",
+    y = "Relative Importance Weight"
+  )
+print(vip_plot)
+```
