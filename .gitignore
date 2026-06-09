@@ -9,3 +9,5 @@ data_processed
 data_split
 Data Preparation
 replace-html.ps1
+md-rpub_cache/
+md-rpub_files/
