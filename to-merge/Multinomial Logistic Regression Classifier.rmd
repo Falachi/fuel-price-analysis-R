@@ -6,7 +6,7 @@
 level of global fuel price to countries fuel price changes by quarter.**
 
 The objective of this classification model is to classify the impact
-level of global fuel price changes on countries\' fuel price changes by
+level of global fuel price changes on countries' fuel price changes by
 quarter. The target variable used in this model is impact_level, which
 consists of three classes: Low Impact, Medium Impact, and High Impact.
 
@@ -21,7 +21,7 @@ crude_pct_change. These variables are used to examine whether quarterly
 crude oil price movements and country-level fuel information can
 classify the level of impact on country fuel price changes.
 
-\# Load required libraries
+# Load required libraries
 
 library(dplyr)
 
@@ -33,116 +33,116 @@ library(ggplot2)
 
 library(pROC)
 
-\# Load training and testing datasets
+# Load training and testing datasets
 
-train_df \<- read.csv(\"train_df.csv\")
+train_df <- read.csv("train_df.csv")
 
-test_df \<- read.csv(\"test_df.csv\")
+test_df <- read.csv("test_df.csv")
 
-\# If R cannot find the files, use this instead:
+# If R cannot find the files, use this instead:
 
-\# train_df \<- read.csv(file.choose())
+# train_df <- read.csv(file.choose())
 
-\# test_df \<- read.csv(file.choose())
+# test_df <- read.csv(file.choose())
 
 **Data Preparation for Multinomial Logistic Regression**
 
-\# Remove extra spaces from the target variable
+# Remove extra spaces from the target variable
 
-train_df\$impact_level \<- trimws(train_df\$impact_level)
+train_df$impact_level <- trimws(train_df$impact_level)
 
-test_df\$impact_level \<- trimws(test_df\$impact_level)
+test_df$impact_level <- trimws(test_df$impact_level)
 
-\# Convert target variable into factor with fixed class order
+# Convert target variable into factor with fixed class order
 
-train_df\$impact_level \<- factor(
+train_df$impact_level <- factor(
 
-train_df\$impact_level,
+train_df$impact_level,
 
-levels = c(\"Low Impact\", \"Medium Impact\", \"High Impact\")
-
-)
-
-test_df\$impact_level \<- factor(
-
-test_df\$impact_level,
-
-levels = c(\"Low Impact\", \"Medium Impact\", \"High Impact\")
+levels = c("Low Impact", "Medium Impact", "High Impact")
 
 )
 
-\# Check class distribution
+test_df$impact_level <- factor(
 
-cat(\"Training class distribution:\\n\")
+test_df$impact_level,
 
-print(table(train_df\$impact_level))
+levels = c("Low Impact", "Medium Impact", "High Impact")
 
-cat(\"Testing class distribution:\\n\")
+)
 
-print(table(test_df\$impact_level))
+# Check class distribution
 
-\# Convert categorical predictors into factors
+cat("Training class distribution:n")
 
-categorical_cols \<- c(\"quarter\", \"country\", \"fuel_type\")
+print(table(train_df$impact_level))
+
+cat("Testing class distribution:n")
+
+print(table(test_df$impact_level))
+
+# Convert categorical predictors into factors
+
+categorical_cols <- c("quarter", "country", "fuel_type")
 
 for (col in categorical_cols) {
 
-train_df\[\[col\]\] \<- factor(train_df\[\[col\]\])
+train_df[[col]] <- factor(train_df[[col]])
 
-test_df\[\[col\]\] \<- factor(test_df\[\[col\]\], levels =
-levels(train_df\[\[col\]\]))
+test_df[[col]] <- factor(test_df[[col]], levels =
+levels(train_df[[col]]))
 
 }
 
-\# Scale numerical predictor using training data statistics
+# Scale numerical predictor using training data statistics
 
-crude_mean \<- mean(train_df\$crude_pct_change, na.rm = TRUE)
+crude_mean <- mean(train_df$crude_pct_change, na.rm = TRUE)
 
-crude_sd \<- sd(train_df\$crude_pct_change, na.rm = TRUE)
+crude_sd <- sd(train_df$crude_pct_change, na.rm = TRUE)
 
-train_df\$crude_pct_change_scaled \<-
+train_df$crude_pct_change_scaled <-
 
-(train_df\$crude_pct_change - crude_mean) / crude_sd
+(train_df$crude_pct_change - crude_mean) / crude_sd
 
-test_df\$crude_pct_change_scaled \<-
+test_df$crude_pct_change_scaled <-
 
-(test_df\$crude_pct_change - crude_mean) / crude_sd
+(test_df$crude_pct_change - crude_mean) / crude_sd
 
-\# Select variables used in the model
+# Select variables used in the model
 
-model_vars \<- c(
+model_vars <- c(
 
-\"impact_level\",
+"impact_level",
 
-\"quarter\",
+"quarter",
 
-\"country\",
+"country",
 
-\"fuel_type\",
+"fuel_type",
 
-\"crude_pct_change_scaled\"
+"crude_pct_change_scaled"
 
 )
 
-\# Remove missing values from selected variables
+# Remove missing values from selected variables
 
-train_model \<- train_df %\>%
+train_model <- train_df %>%
 
-select(all_of(model_vars)) %\>%
-
-na.omit()
-
-test_model \<- test_df %\>%
-
-select(all_of(model_vars)) %\>%
+select(all_of(model_vars)) %>%
 
 na.omit()
 
-\# Check final number of observations used
+test_model <- test_df %>%
 
-cat(\"Training rows used:\", nrow(train_model), \"\\n\")
+select(all_of(model_vars)) %>%
 
-cat(\"Testing rows used:\", nrow(test_model), \"\\n\")
+na.omit()
+
+# Check final number of observations used
+
+cat("Training rows used:", nrow(train_model), "n")
+
+cat("Testing rows used:", nrow(test_model), "n")
 
 The variable impact_level was used as the target variable. The
 predictors selected were quarter, country, fuel_type, and
@@ -151,13 +151,13 @@ scaled to improve model stability.
 
 **Building the Multinomial Logistic Regression Model**
 
-\# Build Multinomial Logistic Regression model
+# Build Multinomial Logistic Regression model
 
 set.seed(123)
 
-multi_log_model \<- multinom(
+multi_log_model <- multinom(
 
-impact_level \~ quarter + country + fuel_type + crude_pct_change_scaled,
+impact_level ~ quarter + country + fuel_type + crude_pct_change_scaled,
 
 data = train_model,
 
@@ -167,57 +167,57 @@ trace = FALSE
 
 )
 
-\# Display model summary
+# Display model summary
 
 summary(multi_log_model)
 
 **Model Prediction**
 
-\# Predict class labels on the test data
+# Predict class labels on the test data
 
-pred_class \<- predict(
+pred_class <- predict(
 
 multi_log_model,
 
 newdata = test_model,
 
-type = \"class\"
+type = "class"
 
 )
 
-pred_class \<- factor(
+pred_class <- factor(
 
 pred_class,
 
-levels = c(\"Low Impact\", \"Medium Impact\", \"High Impact\")
+levels = c("Low Impact", "Medium Impact", "High Impact")
 
 )
 
-\# Predict class probabilities
+# Predict class probabilities
 
-pred_prob \<- predict(
+pred_prob <- predict(
 
 multi_log_model,
 
 newdata = test_model,
 
-type = \"probs\"
+type = "probs"
 
 )
 
-\# View first few predicted probabilities
+# View first few predicted probabilities
 
 head(pred_prob)
 
 **Confusion Matrix and Classification Performance**
 
-\# Confusion matrix
+# Confusion matrix
 
-conf_matrix \<- confusionMatrix(
+conf_matrix <- confusionMatrix(
 
 pred_class,
 
-test_model\$impact_level
+test_model$impact_level
 
 )
 
@@ -230,32 +230,32 @@ values represent misclassifications.
 
 **Visualisation of Confusion Matrix**
 
-\# Convert confusion matrix into dataframe
+# Convert confusion matrix into dataframe
 
-cm_table \<- as.data.frame(conf_matrix\$table)
+cm_table <- as.data.frame(conf_matrix$table)
 
-\# Plot confusion matrix heatmap
+# Plot confusion matrix heatmap
 
 ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
 
-geom_tile(color = \"white\") +
+geom_tile(color = "white") +
 
-geom_text(aes(label = Freq), color = \"white\", size = 5, fontface =
-\"bold\") +
+geom_text(aes(label = Freq), color = "white", size = 5, fontface =
+"bold") +
 
-scale_fill_gradient(low = \"lightblue\", high = \"darkblue\") +
+scale_fill_gradient(low = "lightblue", high = "darkblue") +
 
 labs(
 
-title = \"Confusion Matrix Heatmap\",
+title = "Confusion Matrix Heatmap",
 
-subtitle = \"Multinomial Logistic Regression\",
+subtitle = "Multinomial Logistic Regression",
 
-x = \"Actual Impact Level\",
+x = "Actual Impact Level",
 
-y = \"Predicted Impact Level\",
+y = "Predicted Impact Level",
 
-fill = \"Count\"
+fill = "Count"
 
 ) +
 
@@ -263,25 +263,25 @@ theme_minimal()
 
 **Accuracy, Precision, Recall and F1-Score**
 
-\# Extract overall accuracy
+# Extract overall accuracy
 
-accuracy \<- conf_matrix\$overall\[\"Accuracy\"\]
+accuracy <- conf_matrix$overall["Accuracy"]
 
-\# Extract per-class metrics
+# Extract per-class metrics
 
-precision \<- conf_matrix\$byClass\[, \"Pos Pred Value\"\]
+precision <- conf_matrix$byClass[, "Pos Pred Value"]
 
-recall \<- conf_matrix\$byClass\[, \"Sensitivity\"\]
+recall <- conf_matrix$byClass[, "Sensitivity"]
 
-\# Calculate F1-score
+# Calculate F1-score
 
-f1_score \<- 2 \* ((precision \* recall) / (precision + recall))
+f1_score <- 2 * ((precision * recall) / (precision + recall))
 
-\# Create per-class performance table
+# Create per-class performance table
 
-metrics_df \<- data.frame(
+metrics_df <- data.frame(
 
-Class = rownames(conf_matrix\$byClass),
+Class = rownames(conf_matrix$byClass),
 
 Precision = round(precision, 4),
 
@@ -289,27 +289,27 @@ Recall = round(recall, 4),
 
 F1_Score = round(f1_score, 4),
 
-Balanced_Accuracy = round(conf_matrix\$byClass\[, \"Balanced
-Accuracy\"\], 4)
+Balanced_Accuracy = round(conf_matrix$byClass[, "Balanced
+Accuracy"], 4)
 
 )
 
 metrics_df
 
-\# Calculate macro-average metrics
+# Calculate macro-average metrics
 
-macro_precision \<- mean(precision, na.rm = TRUE)
+macro_precision <- mean(precision, na.rm = TRUE)
 
-macro_recall \<- mean(recall, na.rm = TRUE)
+macro_recall <- mean(recall, na.rm = TRUE)
 
-macro_f1 \<- mean(f1_score, na.rm = TRUE)
+macro_f1 <- mean(f1_score, na.rm = TRUE)
 
-\# Create summary table
+# Create summary table
 
-macro_metrics \<- data.frame(
+macro_metrics <- data.frame(
 
-Metric = c(\"Accuracy\", \"Macro Precision\", \"Macro Recall\", \"Macro
-F1-score\"),
+Metric = c("Accuracy", "Macro Precision", "Macro Recall", "Macro
+F1-score"),
 
 Value = round(c(accuracy, macro_precision, macro_recall, macro_f1), 4)
 
@@ -317,25 +317,21 @@ Value = round(c(accuracy, macro_precision, macro_recall, macro_f1), 4)
 
 macro_metrics
 
-The accuracy shows the overall proportion of correctly classified
-observations. Precision shows how reliable the model is when it predicts
-a specific impact class. Recall shows how well the model identifies
-actual cases from each class. The F1-score provides a balanced measure
-between precision and recall.
+
 
 **Multiclass ROC and AUC**
 
-\# Calculate multiclass AUC
+# Calculate multiclass AUC
 
-multi_auc \<- multiclass.roc(
+multi_auc <- multiclass.roc(
 
-response = test_model\$impact_level,
+response = test_model$impact_level,
 
 predictor = pred_prob
 
 )
 
-multi_auc_value \<- auc(multi_auc)
+multi_auc_value <- auc(multi_auc)
 
 multi_auc_value
 
@@ -345,47 +341,47 @@ classification performance.
 
 **One-vs-All ROC Curves**
 
-\# One-vs-All ROC curve for Low Impact
+# One-vs-All ROC curve for Low Impact
 
-roc_low \<- roc(
+roc_low <- roc(
 
-response = ifelse(test_model\$impact_level == \"Low Impact\", 1, 0),
+response = ifelse(test_model$impact_level == "Low Impact", 1, 0),
 
-predictor = pred_prob\[, \"Low Impact\"\]
-
-)
-
-\# One-vs-All ROC curve for Medium Impact
-
-roc_medium \<- roc(
-
-response = ifelse(test_model\$impact_level == \"Medium Impact\", 1, 0),
-
-predictor = pred_prob\[, \"Medium Impact\"\]
+predictor = pred_prob[, "Low Impact"]
 
 )
 
-\# One-vs-All ROC curve for High Impact
+# One-vs-All ROC curve for Medium Impact
 
-roc_high \<- roc(
+roc_medium <- roc(
 
-response = ifelse(test_model\$impact_level == \"High Impact\", 1, 0),
+response = ifelse(test_model$impact_level == "Medium Impact", 1, 0),
 
-predictor = pred_prob\[, \"High Impact\"\]
+predictor = pred_prob[, "Medium Impact"]
 
 )
 
-\# Plot ROC curves
+# One-vs-All ROC curve for High Impact
+
+roc_high <- roc(
+
+response = ifelse(test_model$impact_level == "High Impact", 1, 0),
+
+predictor = pred_prob[, "High Impact"]
+
+)
+
+# Plot ROC curves
 
 plot(
 
 roc_low,
 
-col = \"blue\",
+col = "blue",
 
 lwd = 2,
 
-main = \"One-vs-All ROC Curves for Multinomial Logistic Regression\"
+main = "One-vs-All ROC Curves for Multinomial Logistic Regression"
 
 )
 
@@ -393,7 +389,7 @@ plot(
 
 roc_medium,
 
-col = \"orange\",
+col = "orange",
 
 lwd = 2,
 
@@ -405,7 +401,7 @@ plot(
 
 roc_high,
 
-col = \"darkgreen\",
+col = "darkgreen",
 
 lwd = 2,
 
@@ -413,29 +409,29 @@ add = TRUE
 
 )
 
-abline(a = 0, b = 1, lty = 2, col = \"red\")
+abline(a = 0, b = 1, lty = 2, col = "red")
 
 legend(
 
-\"bottomright\",
+"bottomright",
 
 legend = c(
 
-paste(\"Low Impact AUC =\", round(auc(roc_low), 4)),
+paste("Low Impact AUC =", round(auc(roc_low), 4)),
 
-paste(\"Medium Impact AUC =\", round(auc(roc_medium), 4)),
+paste("Medium Impact AUC =", round(auc(roc_medium), 4)),
 
-paste(\"High Impact AUC =\", round(auc(roc_high), 4))
+paste("High Impact AUC =", round(auc(roc_high), 4))
 
 ),
 
-col = c(\"blue\", \"orange\", \"darkgreen\"),
+col = c("blue", "orange", "darkgreen"),
 
 lwd = 2
 
 )
 
-**\
+**
 **
 
 **Model Results and Interpretation**

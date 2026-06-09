@@ -814,6 +814,46 @@ print("--- Q2 Quarterly Data Ready ---")
 head(q2_quarterly_data)
 ```
 
+### End Results
+
+#### Q1 Monthly Regression Dataset
+
+```{r q1-monthly-data-preview, echo=FALSE}
+kable(q1_monthly_data[1:5, ], label = "Q1 Monthly Regression Dataset Preview")
+```
+
+The dataset features nine independent variables: 
+- `country`
+- `region`
+- `income_level`
+- `tax_category`
+- `year`
+- `month`
+- `fuel_type`
+- `avg_crude_price`
+- `historical_crude_price`
+
+The target variable is `avg_retail_price`.
+
+#### Q2 Quarterly Classification Dataset
+```{r q2-quarterly-data-preview, echo=FALSE}
+kable(q2_quarterly_data[1:5, ], label = "Q2 Quarterly Classification Dataset Preview")
+```
+The dataset features 11 independent variables: 
+- `country`
+- `region`
+- `income_level`
+- `tax_category`
+- `year`
+- `quarter`
+- `fuel_type`
+- `avg_retail_price`
+- `avg_crude_price`
+- `retail_pct_change`
+- `crude_pct_change`
+
+The target variable is `impact_level`.
+
 ### Downstream Asset Exporting
 
 To ensure data continuity and freeze state baselines for independent downstream model validation, both structures are written out to dedicated local storage nodes.
@@ -841,7 +881,7 @@ library(readr)
 library(tidyverse)
 library(tidymodels)
 library(vip) # For feature importance plots
-library(doParallel) # For faster parallel processing
+library() # For faster parallel processing
 
 # Load the regression dataset
 df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
@@ -934,24 +974,33 @@ model_workflows <- workflow_set(
 )
 ```
 
-### Hyperparameter Tuning (Parallelised)
-We run grid search matrices across all 3 structural workflow designs. Multi-core cluster architectures are triggered to decrease model cross-validation training execution runtimes.
+### Hyperparameter Tuning
+We run grid search matrices across all 3 structural workflow designs.
 
-```{r grid-tuning}
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
+```{r grid-tuning, message=FALSE, warning=FALSE, cache=TRUE}
+set.seed(123)
+
+library(doParallel)
+cl <- makeCluster(detectCores() - 1)
 registerDoParallel(cl)
 
-set.seed(123)
+parallel_control <- control_grid(
+  save_pred = TRUE,
+  parallel_over = "everything",
+  verbose = FALSE,
+)
+
 tune_results <- model_workflows %>%
   workflow_map(
     fn = "tune_grid",
     seed = 123,
     resamples = folds,
     grid = 10,
-    metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
+    metrics = metric_set(rmse, mae, rsq, mape, huber_loss),
+    control = parallel_control
   )
 
-stopCluster(cl) # Terminate parallel clusters
+stopCluster(cl)
 ```
 
 #### Resampling Validation Summary Plot
@@ -1072,15 +1121,796 @@ Same as regression modeling, we will be building building 3 classification model
 2. Random Forest
 3. Extreme Gradient Boosting (XGBoost)
 
-Multinomial Logistic Regression acts as a strong linear baseline, while Random Forest and XGBoost capture non-linear relationships and interactions. We will evaluate model performance using *accuracy*, *precision*, *recall*, *F1-score*, and *AUC-ROC* metrics to determine the best classification model for predicting fuel price.
+Multinomial Logistic Regression acts as a strong linear baseline, while Random Forest and XGBoost capture non-linear relationships and interactions. We will evaluate model performance using *accuracy*, *precision*, *recall*, *F1-score*, and *AUC-ROC* metrics to determine the best classification model for predicting `impact_level`.
 
 The workflow will be similar to the regression modeling section. The data will be encoded according to the features, and then split into training and testing sets. As the data is time-series in nature, time-based split is used to avoid data leakage. Cross-validation will also be used with a rolling origin approach to evaluate model performance during hyperparameter tuning by utilizing the `tidymodels` framework.
 
-`Tidymodels` is a collection of packages for modeling and statistical analysis in R. It provides a consistent interface for model specification, tuning, and evaluation across different algorithms, making it easier to compare the performance of the multinomial logistic regression, random forest, and XGBoost models in a structured manner. However, the cross-validation uses the `timetk` package to create time-based resampling splits, which is more suitable for time-series data. This allows to evaluate the models' performance in a way that respects the temporal order of the data, and ensuring that the model evaluation is realistic for forecasting tasks.
+`Tidymodels` is a collection of packages for modeling and statistical analysis in R. It provides a consistent interface for model specification, tuning, and evaluation across different algorithms, making it easier to compare the performance of the multinomial logistic regression, random forest, and XGBoost models in a structured manner. It also has `recipe` which provides a consistent interface for data preprocessing. However, the cross-validation uses the `timetk` package to create time-based resampling splits, which is more suitable for time-series data. This allows to evaluate the models' performance in a way that respects the temporal order of the data, and ensuring that the model evaluation is realistic for forecasting tasks.
 
+### Data Preparation
 
+This section will cover the data preparation steps for the classification modeling. It will be using the quarterly dataset that we prepared in the data preparation section, which contains the `impact_level` variable as our target for classification. This step includes splitting the data into training and testing sets, encoding categorical variables, and setting up the cross-validation strategy for time-series data.
 
+#### Import Libraries & Data
+```{r import-classification-data, message=FALSE, warning=FALSE}
+library(tidymodels)
+library(tidyverse)
+library(rsample)
+library(dplyr)
+library(tsibble)
+library(timetk)
+```
 
+**Descriptions of Each Package:**
+- `tidymodels`: A collection of packages for modeling and statistical analysis in R, providing a consistent interface for model specification, tuning, and evaluation across different algorithms.
+- `tidyverse`: A collection of R packages for data manipulation, visualization, and analysis
+- `rsample`: Provides functions for creating resamples of a dataset, such as cross-validation splits, which is essential for model evaluation.
+- `dplyr`: A package for data manipulation, providing functions for filtering, summarizing, and transforming data.
+- `tsibble`: A package for working with time-series data in a tidy format, allowing for easy manipulation and analysis of time-indexed data.
+- `timetk`: A package for working with time-series data, providing functions for creating time-based resampling splits.
+
+#### Encode Data and Create Time-Based Splits
+
+``` {r classification-data-preparation, message=FALSE, warning=FALSE}
+df <- read_csv("data_processed/Q2_Quarterly_Classification_Data.csv")
+
+tax_levels <- c("Low Tax", "Medium Tax", "High Tax")
+income_levels <- c("Low", "Middle", "High")
+impact_levels <- c("Low Impact", "Medium Impact", "High Impact")
+
+# encode data
+
+# nominal data
+df$country <- as.factor(df$country)
+df$region <- as.factor(df$region)
+
+# ordinal data
+df$tax_category <- factor(
+  df$tax_category,
+  levels = tax_levels,
+  ordered = TRUE
+)
+df$income_level <- factor(
+  df$income_level,
+  levels = income_levels,
+  ordered = TRUE
+)
+df$impact_level <- factor(
+  df$impact_level,
+  levels = impact_levels,
+  ordered = TRUE
+)
+```
+
+A new feature engineering step is added to create a `date` column by combining the `year` and `quarter` columns. This allows for a proper time index for our time-series data to enable time-based splits and resampling strategies.
+
+``` {r create-date-column}
+df |>
+  mutate(time_index = yearquarter(paste(year, "Q", quarter, sep = ""))) |>
+  group_by(country, fuel_type, time_index) |>
+  summarise(unique_impacts = n_distinct(impact_level), .groups = "drop") |>
+  filter(unique_impacts > 1)
+
+df_ts <- df |>
+  mutate(time_index = yearquarter(paste(year, "Q", quarter, sep = ""))) |>
+  # Adding tax_category to the keys separates the data properly
+  as_tsibble(index = time_index, key = c(country, fuel_type, tax_category))
+
+glimpse(df_ts)
+range(df_ts$time_index)
+```
+
+#### Splitting the Data
+
+``` {r classification-data-splitting-setup, include=FALSE}
+set.seed(123)
+```
+
+``` {r classification-data-splitting, message=FALSE, warning=FALSE}
+# Train: 2020 Q1 to 2024 Q4
+train_data_raw <- df_ts |>
+  filter(time_index <= yearquarter("2024 Q4"))
+
+# Test: 2025 Q1 to 2026 Q2 (The rest of the data)
+test_data_raw <- df_ts |>
+  filter(time_index >= yearquarter("2025 Q1"))
+
+# Convert test data to standard tibble and turn yearquarter into a standard Date
+test_data <- test_data_raw |>
+  as_tibble() |>
+  mutate(time_index = as.Date(time_index))
+
+train_data <- train_data_raw |>
+  as_tibble() |>
+  mutate(time_index = as.Date(time_index)) # Converts "2020 Q1" to "2020-01-01"
+```
+
+#### Cross-Validation Setup
+
+``` {r classification-cross-validation-setup, message=FALSE, warning=FALSE}
+folds <- time_series_cv(
+  data        = train_data,
+  date_var    = time_index,
+  initial     = "36 months", # Equivalent to 12 quarters
+  assess      = "6 months", # Equivalent to 2 quarters
+  skip        = "3 months", # Equivalent to 1 quarter
+  cumulative  = TRUE
+)
+```
+
+A rolling-origin time-series cross-validation was used to evaluate the model without data leakage. The initial training window was set to 36 months (12 quarters) to provide a sufficient baseline for capturing stable seasonal patterns. To ensure the evaluation mirrors the actual forecasting objective, a 6-month (2-quarter) assessment window was selected. The training origin advances using a 3-month skip, which aligns with quarterly reporting cycles and maintains computational efficiency. Finally, a cumulative window ensures the model retains all historical data as it moves forward, accurately replicating a production environment where the model continuously learns from the entire past.
+
+``` {r check-folds}
+classification_recipe <- recipe(impact_level ~ ., data = train_data) |>
+  step_mutate(time_index = as.numeric(time_index)) |>
+  step_novel(all_nominal_predictors()) |>
+  step_dummy(all_nominal_predictors(), -all_outcomes()) |>
+  step_zv(all_predictors())
+```
+
+A data preprocessing recipe was constructed to prepare the features for all models. The steps include:
+1. The date variable `time_index` is converted into a numeric format, as the algorithms cannot natively process date objects. 
+2. To handle potential data drift or unseen categories in future deployment, `step_novel()` is applied to assign a dedicated category to new factor levels. 
+3. All nominal predictors are then converted into dummy variables using one-hot encoding.
+4. Finally, a zero-variance filter `step_zv()` removes any constant predictors that could destabilize the training process to ensure a clean and mathematically stable dataset for modeling.
+
+### Multinomial Logistic Regression
+
+#### Objective
+
+**Q2 Classification:** To build classification model that analyse impact
+level of global fuel price to countries fuel price changes by quarter.**
+
+The objective of this classification model is to classify the impact
+level of global fuel price changes on countries\' fuel price changes by
+quarter. The target variable used in this model is impact_level, which
+consists of three classes: Low Impact, Medium Impact, and High Impact.
+
+Multinomial Logistic Regression was selected because the classification
+problem has more than two outcome categories. Unlike binary Logistic
+Regression, which is used for two-class classification problems,
+Multinomial Logistic Regression can handle multi-class classification
+problems.
+
+In this model, the predictors used are quarter, country, fuel_type, and
+crude_pct_change. These variables are used to examine whether quarterly
+crude oil price movements and country-level fuel information can
+
+#### Building the Model
+
+##### Load Required Libraries
+
+``` {r load-libraries, message=FALSE, warning=FALSE}
+library(dplyr)
+library(caret)
+library(nnet)
+library(ggplot2)
+library(pROC)
+```
+
+##### Load training and testing datasets
+
+``` {r load-datasets, message=FALSE, warning=FALSE}
+train_df <- read.csv("data_split/classification/train_df.csv")
+
+test_df <- read.csv("data_split/classification/test_df.csv")
+```
+
+##### Data Preparation
+
+``` {r data-preparation, message=FALSE, warning=FALSE}
+# Remove extra spaces from the target variable
+train_df$impact_level <- trimws(train_df$impact_level)
+test_df$impact_level <- trimws(test_df$impact_level)
+
+# Convert target variable into factor with fixed class order
+train_df$impact_level <- factor(
+  train_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+
+test_df$impact_level <- factor(
+  test_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+
+# Convert target variable into factor with fixed class order
+
+train_df$impact_level <- factor(
+  train_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+
+test_df$impact_level <- factor(
+  test_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+
+# Check class distribution
+
+cat("Training class distribution:n")
+
+print(table(train_df$impact_level))
+
+cat("Testing class distribution:n")
+
+print(table(test_df$impact_level))
+
+# Convert categorical predictors into factors
+
+categorical_cols <- c("quarter", "country", "fuel_type")
+
+for (col in categorical_cols) {
+  train_df[[col]] <- factor(train_df[[col]])
+
+  test_df[[col]] <- factor(test_df[[col]],
+    levels =
+      levels(train_df[[col]])
+  )
+}
+
+# Scale numerical predictor using training data statistics
+
+crude_mean <- mean(train_df$crude_pct_change, na.rm = TRUE)
+
+crude_sd <- sd(train_df$crude_pct_change, na.rm = TRUE)
+
+train_df$crude_pct_change_scaled <- (train_df$crude_pct_change - crude_mean) / crude_sd
+
+test_df$crude_pct_change_scaled <- (test_df$crude_pct_change - crude_mean) / crude_sd
+
+# Select variables used in the model
+
+model_vars <- c(
+  "impact_level",
+  "quarter",
+  "country",
+  "fuel_type",
+  "crude_pct_change_scaled"
+)
+
+# Remove missing values from selected variables
+
+train_model <- train_df %>%
+  select(all_of(model_vars)) %>%
+  na.omit()
+
+test_model <- test_df %>%
+  select(all_of(model_vars)) %>%
+  na.omit()
+
+# Check final number of observations used
+
+cat("Training rows used:", nrow(train_model), "n")
+
+cat("Testing rows used:", nrow(test_model), "n")
+```
+
+The variable impact_level was used as the target variable. The predictors selected were quarter, country, fuel_type, and crude_pct_change_scaled. The numerical variable crude_pct_change was scaled to improve model stability.
+
+##### Model Training
+
+``` {r model-training, message=FALSE, warning=FALSE, cache=TRUE}
+set.seed(123)
+
+multi_log_model <- multinom(
+  impact_level ~ quarter + country + fuel_type + crude_pct_change_scaled,
+  data = train_model,
+  maxit = 1000,
+  trace = FALSE
+)
+```
+
+**Summary of the Model:**
+
+``` {r model-summary, echo=FALSE}
+summary(multi_log_model)
+```
+
+##### Model Prediction
+
+``` {r model-prediction, message=FALSE, warning=FALSE}
+# Predict class labels on the test data
+pred_class <- predict(
+  multi_log_model,
+  newdata = test_model,
+  type = "class"
+)
+
+pred_class <- factor(
+  pred_class,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+
+# Predict class probabilities
+pred_prob <- predict(
+  multi_log_model,
+  newdata = test_model,
+  type = "probs"
+)
+```
+
+**View first few predicted probabilities:**
+
+``` {r view-predicted-probabilities, echo=FALSE}
+knitr::kable(head(pred_prob))
+```
+
+##### Model Performance
+
+###### Confusion Matrix
+
+``` {r confusion-matrix, message=FALSE, warning=FALSE}
+conf_matrix <- confusionMatrix(
+  pred_class,
+  test_model$impact_level
+)
+```
+``` {r confusion-matrix-plot, echo=FALSE}
+# Convert confusion matrix into dataframe
+
+cm_table <- as.data.frame(conf_matrix$table)
+
+# Plot confusion matrix heatmap
+
+ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq),
+    color = "white", size = 5, fontface =
+      "bold"
+  ) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(
+    title = "Confusion Matrix Heatmap",
+    subtitle = "Multinomial Logistic Regression",
+    x = "Actual Impact Level",
+    y = "Predicted Impact Level",
+    fill = "Count"
+  ) +
+  theme_minimal()
+```
+
+###### Accuracy, Precision, Recall and F1-Score
+
+``` {r performance-metrics}
+# Extract overall accuracy
+
+accuracy <- conf_matrix$overall["Accuracy"]
+
+# Extract per-class metrics
+
+precision <- conf_matrix$byClass[, "Pos Pred Value"]
+
+recall <- conf_matrix$byClass[, "Sensitivity"]
+
+# Calculate F1-score
+
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+# Create per-class performance table
+
+metrics_df <- data.frame(
+  Class = rownames(conf_matrix$byClass),
+  Precision = round(precision, 4),
+  Recall = round(recall, 4),
+  F1_Score = round(f1_score, 4),
+  Balanced_Accuracy = round(conf_matrix$byClass[, "Balanced Accuracy"], 4)
+)
+
+metrics_df
+
+# Calculate macro-average metrics
+
+macro_precision <- mean(precision, na.rm = TRUE)
+
+macro_recall <- mean(recall, na.rm = TRUE)
+
+macro_f1 <- mean(f1_score, na.rm = TRUE)
+
+# Create summary table
+macro_metrics <- data.frame(
+  Metric = c("Accuracy", "Macro Precision", "Macro Recall", "Macro
+F1-score"),
+  Value = round(c(accuracy, macro_precision, macro_recall, macro_f1), 4)
+)
+macro_metrics
+```
+
+The accuracy shows the overall proportion of correctly classified observations. Precision shows how reliable the model is when it predicts a specific impact class. Recall shows how well the model identifies actual cases from each class. The F1-score provides a balanced measure between precision and recall.
+
+###### Multiclass ROC and AUC
+
+``` {r multiclass-roc}
+multi_auc <- multiclass.roc(
+  response = test_model$impact_level,
+  predictor = pred_prob
+)
+
+multi_auc_value <- auc(multi_auc)
+
+print(multi_auc_value)
+```
+
+The multiclass AUC measures how well the model separates the three impact levels overall. A higher AUC value indicates stronger classification performance.
+
+###### One-vs-All ROC Curves
+
+``` {r one-vs-all-roc}
+# One-vs-All ROC curve for Low Impact
+
+roc_low <- roc(
+  response = ifelse(test_model$impact_level == "Low Impact", 1, 0),
+  predictor = pred_prob[, "Low Impact"]
+)
+
+# One-vs-All ROC curve for Medium Impact
+
+roc_medium <- roc(
+  response = ifelse(test_model$impact_level == "Medium Impact", 1, 0),
+  predictor = pred_prob[, "Medium Impact"]
+)
+
+# One-vs-All ROC curve for High Impact
+
+roc_high <- roc(
+  response = ifelse(test_model$impact_level == "High Impact", 1, 0),
+  predictor = pred_prob[, "High Impact"]
+)
+
+# Plot ROC curves
+
+plot(
+  roc_low,
+  col = "blue",
+  lwd = 2,
+  main = "One-vs-All ROC Curves for Multinomial Logistic Regression"
+)
+
+plot(
+  roc_medium,
+  col = "orange",
+  lwd = 2,
+  add = TRUE
+)
+
+plot(
+  roc_high,
+  col = "darkgreen",
+  lwd = 2,
+  add = TRUE
+)
+
+abline(a = 0, b = 1, lty = 2, col = "red")
+
+legend(
+  "bottomright",
+  legend = c(
+    paste("Low Impact AUC =", round(auc(roc_low), 4)),
+    paste("Medium Impact AUC =", round(auc(roc_medium), 4)),
+    paste("High Impact AUC =", round(auc(roc_high), 4))
+  ),
+  col = c("blue", "orange", "darkgreen"),
+  lwd = 2
+)
+```
+
+###### Model Results and Interpretation
+
+``` {r model-results-interpretation, echo=FALSE}
+metrics <- c(
+  "Accuracy" = accuracy,
+  "Macro Precision" = macro_precision,
+  "Macro Recall" = macro_recall,
+  "Macro F1-score" = macro_f1,
+  "Multiclass AUC" = multi_auc_value
+)
+
+results_summary <- data.frame(
+  Metric = names(metrics),
+  Value = round(metrics, 4)
+)
+
+knitr::kable(results_summary, caption = "Multinomial Logistic Regression Performance Summary")
+```
+
+The Multinomial Logistic Regression model was developed to classify the impact level of global fuel price changes on country-level fuel price changes by quarter. The target variable used was impact_level, which consists of three categories: **Low Impact**, **Medium Impact**, and **High Impact**. The predictors used in the model were quarter, country, fuel_type, and crude_pct_change.
+
+Based on the test dataset, the model achieved an overall accuracy of **55.8%**. This means that the model correctly classified 55.8% of the observations. The No Information Rate was **53.01%**, which represents the accuracy that could be achieved by always predicting the majority class. Since the model accuracy is only slightly higher than the No Information Rate, this indicates that the model provides some improvement over a simple majority-class prediction, but the improvement is limited.
+
+The confusion matrix shows that the model performed best in classifying **Low Impact** observations. Out of the actual Low Impact cases, the model correctly classified **1,417** observations, giving a recall of **80.06%** for this class. This suggests that the model is reasonably good at detecting lower-impact fuel price changes.
+
+For **High Impact**, the model showed moderate performance. It correctly classified **378** High Impact observations, with a recall of **65.85%**. However, the precision for High Impact was **45.27%**, meaning that not all observations predicted as High Impact were actually High Impact cases.
+
+The weakest performance was observed for **Medium Impact**. The model correctly classified only **68** Medium Impact observations, while many Medium Impact cases were misclassified as Low Impact or High Impact. The recall for Medium Impact was only **6.83%**, showing that the model had difficulty identifying this category. This may suggest that Medium Impact observations are less clearly separated from the other two classes using the selected predictors.
+
+The macro-average results further support this interpretation. The model achieved a **Macro Precision of 46.00%**, **Macro Recall of 50.91%**, and **Macro F1-score of 44.92%**. Although the overall accuracy was 55.8%, the low Macro F1-score shows that the model performance was not balanced across all three impact levels. In particular, the poor performance for Medium Impact reduced the overall class-balanced performance.
+
+The model also achieved a **Multiclass AUC of 0.6838**, indicating a moderate ability to distinguish between Low Impact, Medium Impact, and High Impact classes. However, this value also suggests that the model still has room for improvement.
+
+Overall, the Multinomial Logistic Regression model provides a useful baseline for the classification problem. It is able to identify Low Impact cases relatively well and shows moderate ability in detecting High Impact cases. However, it struggles to classify Medium Impact observations accurately. This indicates that the relationship between global crude oil price changes and country-level fuel price impact may be more complex than what a linear classification model can fully capture. Therefore, more flexible machine learning models such as Random Forest or XGBoost may be better suited to improve classification performance.
+
+### Random Forest Classifier 
+
+#### Objective
+
+The objective of this classification model is to predict the **impact level of global fuel price changes** on countries’ fuel price changes by quarter.  
+The target variable `impact_level` has three categories: *Low Impact*, *Medium Impact*, and *High Impact*.  
+
+Random Forest was selected because it is well‑suited for **multi‑class classification problems** and can handle complex interactions between categorical and continuous predictors.  
+It also provides variable importance measures, which help identify the most influential factors driving classification outcomes.  
+
+In this project, the predictors include:
+
+- **Quarter** (seasonal effects)  
+- **Country** (policy and subsidy differences)  
+- **Fuel type** (petrol, diesel, LPG)  
+- **Crude oil percentage change** (global market fluctuations)  
+
+#### Methods
+
+```{r random-forest-methods, message=FALSE, warning=FALSE}
+# Load libraries
+library(randomForest)
+library(caret)
+library(ggplot2)
+library(pROC)
+
+# Read train/test datasets
+train_df <- read.csv("data_split/classification/train_df.csv")
+test_df <- read.csv("data_split/classification/test_df.csv")
+
+# Ensure factor levels match
+train_df$impact_level <- trimws(train_df$impact_level)
+test_df$impact_level <- trimws(test_df$impact_level)
+
+train_df$impact_level <- factor(train_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+test_df$impact_level <- factor(test_df$impact_level,
+  levels = c("Low Impact", "Medium Impact", "High Impact")
+)
+```
+
+##### Results
+```{r random-forest-results, message=FALSE, warning=FALSE}
+# Check class distribution
+cat("Train class counts:\n")
+print(table(train_df$impact_level))
+cat("Test class counts:\n")
+print(table(test_df$impact_level))
+```
+
+#### Model Training
+
+```{r random-forest-training, message=FALSE, warning=FALSE, cache=TRUE}
+# Train Random Forest model
+set.seed(123)
+rf_model <- randomForest(
+  impact_level ~ quarter + country + fuel_type +
+    crude_pct_change,
+  data = train_df,
+  ntree = 300,
+  mtry = floor(sqrt(5)),
+  importance = TRUE
+)
+```
+
+#### Model Evaluation
+```{r random-forest-evaluation, message=FALSE, warning=FALSE}
+# Predict on test set
+predictions <- predict(rf_model, newdata = test_df)
+```
+
+##### Confusion Matrix
+```{r random-forest-confusion-matrix, message=FALSE, warning=FALSE}
+cm <- confusionMatrix(predictions, test_df$impact_level)
+print(cm)
+```
+
+The model achieves an overall accuracy of 70.4%. It performs very well at identifying Low Impact cases, correctly predicting 1,577 of them. However, it experiences noticeable friction with Medium Impact cases, frequently misclassifying them as Low Impact.
+
+##### Per class metrics
+```{r random-forest-per-class-metrics, message=FALSE, warning=FALSE}
+precision <- cm$byClass[, "Pos Pred Value"]
+recall <- cm$byClass[, "Sensitivity"]
+f1 <- 2 * ((precision * recall) / (precision + recall))
+
+metrics_df <- data.frame(
+  Class = rownames(cm$byClass),
+  Precision = round(precision, 3),
+  Recall = round(recall, 3),
+  F1_Score = round(f1, 3),
+  Balanced_Accuracy = round(cm$byClass[, "Balanced Accuracy"], 3)
+)
+print(metrics_df)
+```
+The per-class metrics confirm that the model is highly reliable for Low Impact predictions, yielding a strong F1-Score of 0.801 and a recall of 0.891. Conversely, Medium Impact is the weakest category with an F1-Score of 0.514, showing that the model requires sharper decision boundaries to separate minor baseline shifts from low-level activity.
+
+##### Variable Importance Plot
+```{r random-forest-variable-importance, message=FALSE, warning=FALSE}
+imp <- importance(rf_model)
+imp_df <- data.frame(
+  Variable = rownames(imp),
+  MeanDecreaseAccuracy = imp[, "MeanDecreaseAccuracy"]
+)
+
+ggplot(imp_df, aes(
+  x = reorder(Variable, MeanDecreaseAccuracy),
+  y = MeanDecreaseAccuracy
+)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Variable Importance (Random Forest)",
+    x = "Predictor",
+    y = "Mean Decrease in Accuracy"
+  ) +
+  theme_minimal()
+```
+Changes in global crude oil prices are by far the most important factor driving the model's predictions, completely outperforming everything else. On the other hand, the fuel type variable actually scores below zero. This indicates that knowing whether a fuel is petrol or diesel provides no real predictive value and might even confuse the model, making it a prime candidate to be removed in future versions.
+
+##### Class distribution plot
+```{r random-forest-class-distribution, message=FALSE, warning=FALSE}
+ggplot(train_df, aes(x = impact_level)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Class Distribution (Train Set)", x = "Impact Level", y = "Count") +
+  theme_minimal()
+
+ggplot(test_df, aes(x = impact_level)) +
+  geom_bar(fill = "darkred") +
+  labs(title = "Class Distribution (Test Set)", x = "Impact Level", y = "Count") +
+  theme_minimal()
+```
+The distribution plots reveal a critical shift between our datasets. While the training set is relatively well-balanced across all three tiers, the testing set is heavily skewed toward Low Impact observations (1,770 cases vs. only 574 High Impact cases). This imbalance in the test data heavily influences our final accuracy metrics.
+
+##### Confusion matrix heatmap
+```{r random-forest-confusion-matrix-classification, message=FALSE, warning=FALSE}
+cm_table <- as.data.frame(cm$table)
+ggplot(cm_table, aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Confusion Matrix Heatmap") +
+  theme_minimal()
+```
+The heatmap visually isolates where the model succeeds and where it loses track. The deep blue square at the bottom left highlights the model's core strength: correctly identifying Low Impact cases 1,577 times. However, the lighter tile right next to it clearly flags our primary weak point, showing that 468 actual Medium Impact cases were incorrectly swept into the Low Impact category.
+
+#### Conclusion
+The Random Forest model provides a solid baseline with an overall accuracy of 70.4%, proving highly effective at identifying low-impact market shifts. Because global crude oil trends completely dominate the model's decision tree splits while product specifics like fuel type offer no actual value, future work should focus on simplifying the feature space. Dropping the fuel type variable and introducing specific country by crude interaction terms will be the most direct path to fixing the overlap between Low and Medium impact classes.
+
+### Extreme Gradient Boosting (XGBoost) Classifier
+
+``` {r xgboost-classification-setup, include=FALSE}
+library(tidymodels)
+
+# preprocess the data and split into training and testing sets
+# source("scripts/classification_split.R")
+
+# Model: XGBoost
+set.seed(123)
+```
+
+Xtreme Gradient Boosting (XGBoost) is a powerful machine learning algorithm that has gained popularity for its performance and efficiency in classification tasks. It is an implementation of gradient boosting that uses decision trees as base learners. XGBoost is designed to optimize both speed and performance, making it a strong candidate for our classification problem.
+
+#### Building the Model
+
+``` {r xgboost-classification-model-spec, message=FALSE, warning=FALSE}
+xgboost_spec <- boost_tree(
+  trees = 1000,
+  tree_depth = tune(), # Tune this
+  learn_rate = tune(), # Tune this
+  min_n = tune() # Tune this
+) |>
+  set_engine("xgboost") |>
+  set_mode("classification")
+
+# Combine recipe and model into a workflow
+xgboost_workflow <- workflow() |>
+  add_model(xgboost_spec) |>
+  add_recipe(classification_recipe)
+```
+
+The code above sets the specification of the XGBoost model. The number of trees is set to 1000 to allow the model to learn complex patterns, but not too much that it overfits; while tree_depth, learn_rate, and min_n are set to be tuned during the hyperparameter tuning process.
+
+``` {r xgboost-classification-model, message=FALSE, warning=FALSE, eval=FALSE}
+library(doParallel)
+cl <- makePSOCKcluster(parallel::detectCores() - 1)
+registerDoParallel(cl)
+
+parallel_control <- control_grid(
+  save_pred = TRUE,
+  parallel_over = "everything",
+  verbose = FALSE,
+)
+
+# Tune the model using cross-validation
+xgboost_tune <- xgboost_workflow |>
+  tune_grid(
+    resamples = folds,
+    grid = 20, # Number of random combinations to try
+    control = parallel_control
+  )
+
+stopCluster(cl)
+```
+
+The training and cross-validation process for the XGBoost model is computationally intensive, especially when tuning multiple hyperparameters. To speed up this process, parallel processing is utilized by creating a cluster that uses all available CPU cores except one. The `control_grid` function is configured to save predictions and allow parallel processing across all resamples. The `tune_grid` function then performs the hyperparameter tuning using the specified cross-validation folds.
+
+The best parameters for XGBoost can be grabbed with the code below.
+
+```{r xgboost-best-parameters, eval = FALSE}
+# Select the best hyperparameters based on accuracy
+best_xgboost <- xgboost_tune |>
+  select_best(metric = "accuracy")
+```
+
+**Parameters:**
+- `min_n`: 24
+  - This suggests that the model performs best when each leaf node has at least 24 observations.
+- `tree_depth`: 4
+  - This indicates that the optimal tree depth for the model is 4. Indicating that the model is not too complex.
+- `learn_rate`: 0.001
+  - This very low learning rate suggests that the model benefits from a slow and steady learning process.
+
+#### Model Metrics
+
+``` {r xgboost-classification-metrics-setup, include=FALSE}
+library(bundle)
+# 1. Load and unbundle the model instantly (takes 1 second)
+bundled_xgb <- readRDS("models/classification/final_xgboost_model.rds")
+final_xgboost <- unbundle(bundled_xgb)
+```
+
+```{r xgboost-classification-metrics, message=FALSE, warning=FALSE}
+# 2. Explicitly force R to use the tidymodels (yardstick) functions
+my_metrics <- yardstick::metric_set(
+  yardstick::accuracy,
+  yardstick::precision,
+  yardstick::recall,
+  yardstick::f_meas
+)
+
+# 3. Generate predictions on the test data
+xgboost_predictions <- predict(final_xgboost, test_data) |>
+  bind_cols(test_data)
+
+# 4. Calculate metrics safely
+xgboost_metrics <- xgboost_predictions |>
+  my_metrics(truth = impact_level, estimate = .pred_class, estimator = "macro")
+```
+
+``` {r xgboost-classification-metrics-table, echo=FALSE}
+knitr::kable(xgboost_metrics, caption = "XGBoost Classification Performance Metrics")
+```
+
+The model demonstrates outstanding performance across all evaluated classification metrics, achieving near-perfect predictive accuracy and balance:
+
+- **Accuracy (99.5%):** The model correctly classifies 99.5% of all instances in the dataset.
+
+- **Precision (Macro: 99.5%):** Out of all instances the model predicted as belonging to a specific class, 99.5% were correctly identified, indicating an exceptionally low false-positive rate.
+
+- **Recall (Macro: 99.3%):** The model successfully captures 99.3% of all actual positive instances across classes, demonstrating an exceptionally low false-negative rate.
+
+- **F1-Score (Macro: 99.4%):** The harmonic mean of precision and recall confirms that the model maintains a highly stable and balanced performance without favoring one metric over the other.
+
+The model performs exceptionally well across all individual classes as the macro-averaged metrics are virtually identical to the overall accuracy.
+
+##### Confusion Matrix
+
+``` {r xgboost-classification-confusion-matrix, echo=FALSE, message=FALSE, warning=FALSE}
+# Get and plot the confusion matrix
+xgboost_conf_matrix <- xgboost_predictions |>
+  conf_mat(truth = impact_level, estimate = .pred_class)
+
+print(xgboost_conf_matrix)
+
+autoplot(xgboost_conf_matrix, type = "heatmap") +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "XGBoost Confusion Matrix", x = "Predicted", y = "Actual") +
+  theme_minimal()
+```
+
+The confusion matrix reveals how further robust is the model. Only a total of 17 values were misclassified across all classes. The majority being actual Medium Impact is understandable as this class is often the most difficult to distinguish due to its middle position. However, no extreme misclassifications occurred - such as a high impact predicted as low impact - which shows that the model is reliable in differentiating between the high and low impact cases.
 
 ---
 

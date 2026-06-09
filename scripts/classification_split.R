@@ -44,14 +44,14 @@ glimpse(df)
 # Modeling
 
 # Install and load the required package
-install.packages("rsample")
+# install.packages("rsample")
 library(rsample)
 
 # 1. Split into Training and Testing (e.g., 80/20)
 set.seed(123)
 
 library(dplyr)
-install.packages("tsibble")
+# install.packages("tsibble")
 library(tsibble)
 
 df |>
