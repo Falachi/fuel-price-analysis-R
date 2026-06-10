@@ -885,7 +885,6 @@ library(readr)
 library(tidyverse)
 library(tidymodels)
 library(vip) # For feature importance plots
-library() # For faster parallel processing
 
 # Load the regression dataset
 df <- read_csv("data_processed/Q1_Monthly_Regression_Data.csv")
@@ -1017,7 +1016,7 @@ autoplot(tune_results, metric = "rmse")
 ## Automated Winning Model Extraction
 The system reads across the finalised cross-validation profiles, filters down to select the architecture minimising RMSE, and assigns its hyperparameter choices onto the holdout performance verification test set.
 
-```{r winning-model-extraction}
+```{r winning-model-extraction, cache=TRUE}
 # Programmatically find the absolute best model ID based on the lowest validation RMSE
 best_model_id <- tune_results %>%
   rank_results(rank_metric = "rmse", select_best = TRUE) %>%
@@ -1041,6 +1040,52 @@ final_fit <- last_fit(
   metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
 )
 ```
+
+
+## Losing Model Extraction
+
+### Linear Regression
+
+```{r lose1-model-extraction, cache=TRUE}
+# Extract best tuning results and parameters for that winning model
+linear_tune_res <- tune_results %>% extract_workflow_set_result("base_rec_linear")
+linear_best_parameters <- linear_tune_res %>% select_best(metric = "rmse")
+
+# Finalize the workflow with the winner's best hyperparameters
+linear_final_wf <- tune_results %>%
+  extract_workflow("base_rec_linear") %>%
+  finalize_workflow(linear_best_parameters)
+
+# Fit to the complete Training data and evaluate on the unseen holdout Test set
+linear_final_fit <- last_fit(
+  linear_final_wf,
+  data_split,
+  metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
+)
+collect_metrics(linear_final_fit)
+```
+
+### Random Forest Regression
+```{r lose2-model-extraction, cache=TRUE}
+# Extract best tuning results and parameters for that winning model
+rf_tune_res <- tune_results %>% extract_workflow_set_result("base_rec_rf")
+rf_best_parameters <- rf_tune_res %>% select_best(metric = "rmse")
+
+# Finalize the workflow with the winner's best hyperparameters
+rf_final_wf <- tune_results %>%
+  extract_workflow("base_rec_rf") %>%
+  finalize_workflow(rf_best_parameters)
+
+# Fit to the complete Training data and evaluate on the unseen holdout Test set
+rf_final_fit <- last_fit(
+  rf_final_wf,
+  data_split,
+  metrics = metric_set(rmse, mae, rsq, mape, huber_loss)
+)
+collect_metrics(rf_final_fit)
+```
+
+## Best Model Performance Summary
 
 The algorithm has dynamically selected **`r best_model_id`** as the winning model structure. Below are its optimal tuned parameters:
 
