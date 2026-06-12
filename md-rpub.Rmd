@@ -14,7 +14,6 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
 # Introduction
 
 Volatilities in global energy markets introduce severe economic uncertainties, impacting consumer retail prices and national economic planning. Understanding the pass-through effect of crude oil price shocks onto localized retail markets requires a dual-pronged analytical framework.
@@ -1917,16 +1916,52 @@ my_metrics <- yardstick::metric_set(
   yardstick::accuracy,
   yardstick::precision,
   yardstick::recall,
-  yardstick::f_meas
+  yardstick::f_meas,
+  yardstick::roc_auc
 )
 
 # 3. Generate predictions on the test data
-xgboost_predictions <- predict(final_xgboost, test_data) |>
+xgboost_predictions <- predict(final_xgboost, test_data, type = "class") |>
+  bind_cols(predict(final_xgboost, test_data, type = "prob")) |>
   bind_cols(test_data)
 
 # 4. Calculate metrics safely
+# 4. Calculate metrics safely
 xgboost_metrics <- xgboost_predictions |>
-  my_metrics(truth = impact_level, estimate = .pred_class, estimator = "macro")
+  my_metrics(
+    truth = impact_level,
+    estimate = .pred_class,
+    # Select all probability columns, but ignore the factor prediction column
+    starts_with(".pred_") & !.pred_class,
+    estimator = "macro"
+  )
+```
+
+``` {r xgboost-classification-metrics-roc-auc-graph, message=FALSE, warning=FALSE, echo=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# 1. Generate coordinates for the multiclass ROC curves
+xgboost_curves <- xgboost_predictions |>
+  yardstick::roc_curve(
+    truth = impact_level,
+    # Select all your individual class probability columns
+    starts_with(".pred_") & !.pred_class
+  )
+
+# 2. Automatically plot it with autoplot()
+xgboost_curves |>
+  ggplot(aes(x = 1 - specificity, y = sensitivity, color = .level)) +
+  geom_path(linewidth = 1) + # Use geom_path instead of geom_line to preserve thresholds
+  geom_abline(lty = 3, color = "gray50", linewidth = 0.8) + # The 50/50 baseline
+  scale_color_viridis_d(option = "plasma", name = "Impact Level") +
+  coord_equal() + # Makes the plot perfectly square
+  labs(
+    title = "Multiclass XGBoost ROC Curves",
+    x = "False Positive Rate (1 - Specificity)",
+    y = "True Positive Rate (Sensitivity)"
+  ) +
+  theme_minimal()
 ```
 
 ``` {r xgboost-classification-metrics-table, echo=FALSE}
@@ -1942,6 +1977,7 @@ The model demonstrates outstanding performance across all evaluated classificati
 - **Recall (Macro: 99.3%):** The model successfully captures 99.3% of all actual positive instances across classes, demonstrating an exceptionally low false-negative rate.
 
 - **F1-Score (Macro: 99.4%):** The harmonic mean of precision and recall confirms that the model maintains a highly stable and balanced performance without favoring one metric over the other.
+- **ROC AUC (Macro: 0.999):** The model's ability to distinguish between classes is nearly perfect, with an AUC close to 1.0.
 
 The model performs exceptionally well across all individual classes as the macro-averaged metrics are virtually identical to the overall accuracy.
 

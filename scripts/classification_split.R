@@ -98,6 +98,7 @@ write_csv(test_data, "data_split/classification/test_data.csv")
 
 # generic folds
 library(timetk)
+
 folds <- time_series_cv(
   data        = train_data,
   date_var    = time_index,

@@ -1,0 +1,219 @@
+# Machine Learning Classification Framework: Unified Model Evaluation
+
+Import pre-saved metric snapshots 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 11, fig.height = 6)
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+
+# Import snapshots
+comparison_df <- readRDS("models/evaluation/metrics_comparison.rds")
+advanced_comparison <- readRDS("models/evaluation/advanced_diagnostics.rds")
+speed_df <- readRDS("models/evaluation/operational_speed.rds")
+cm_all <- readRDS("models/evaluation/heatmap_data.rds")
+frontier_df <- readRDS("models/evaluation/frontier_data.rds")
+train_df <- readRDS("models/evaluation/train_df_snapshot.rds")
+test_df <- readRDS("models/evaluation/test_df_snapshot.rds")
+test_data_xgb <- readRDS("models/evaluation/test_data_xgb_snapshot.rds")
+test_data_logistic <- readRDS("models/evaluation/test_data_logistic_snapshot.rds")
+
+# ADD THIS LINE: Pull in the dataset to fix unnamed-chunk-8!
+test_data_rf_clean <- readRDS("models/evaluation/test_data_rf_clean_snapshot.rds")
+
+target_levels <- c("Low Impact", "Medium Impact", "High Impact")
+```
+
+## Introduction
+The aim of this project is to evaluate three machine learning models — **XGBoost**, **Multinomial Logistic Regression**, and **Random Forest** — for predicting the impact level of global fuel price changes.  
+
+Our objectives are:
+- To compare predictive accuracy across models.  
+- To measure computational efficiency (latency).  
+- To analyze error distributions and misclassifications.  
+- To identify the most reliable framework for deployment.
+
+
+## Methodology
+
+### 1. Loading Libraries
+We begin by loading essential R packages for machine learning, evaluation, and visualization. These include `caret`, `tidymodels`, `randomForest`, and `pROC`.
+
+```{r}
+# Load libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(caret)
+library(pROC)
+library(yardstick)
+library(tidymodels)
+library(bundle)
+library(randomForest)
+```
+
+2. Loading Pre‑Trained Models
+Models were trained previously and saved as .rds files, so we are restoring them here:
+```{r}
+xgb_bundle <- readRDS("models/classification/final_xgboost_model.rds")
+model_xgb <- bundle::unbundle(xgb_bundle)
+
+model_logistic <- readRDS("models/classification/final_logistic_model.rds")
+rf_model <- readRDS("models/classification/final_rf_model.rds")
+```
+
+3. Preparing Test Data
+Each model requires slightly different preprocessing:
+
+XGBoost: factor alignment and date handling.
+Logistic Regression: scaling of numeric predictors.
+Random Forest: factor level synchronization with training data.
+
+# Example: Logistic Regression preprocessing
+```{r}
+crude_mean <- mean(train_df$crude_pct_change, na.rm = TRUE)
+crude_sd <- sd(train_df$crude_pct_change, na.rm = TRUE)
+
+test_data_logistic <- test_df %>%
+  mutate(
+    impact_level = factor(trimws(impact_level), levels = target_levels),
+    quarter = factor(quarter),
+    country = factor(country),
+    fuel_type = factor(fuel_type),
+    crude_pct_change_scaled = (crude_pct_change - crude_mean) / crude_sd
+  ) %>%
+  select(impact_level, quarter, country, fuel_type, crude_pct_change_scaled) %>%
+  na.omit()
+```
+
+Results
+4. Prediction Generation
+Each model produces both class predictions and probability matrices:
+
+# XGBoost predictions
+```{r}
+xgb_class <- predict(model_xgb, new_data = test_data_xgb, type = "class")$.pred_class
+xgb_prob <- predict(model_xgb, new_data = test_data_xgb, type = "prob")
+```
+
+# Logistic Regression predictions
+```{r}
+logistic_class <- predict(model_logistic, newdata = test_data_logistic, type = "class")
+logistic_prob <- predict(model_logistic, newdata = test_data_logistic, type = "probs")
+```
+
+# Random Forest predictions
+```{r}
+rf_class <- predict(rf_model, newdata = test_data_rf_clean, type = "response")
+rf_prob <- predict(rf_model, newdata = test_data_rf_clean, type = "prob")
+```
+
+5. Core Evaluation Metrics
+We compute Accuracy, Precision, Recall, F1‑Score, and AUC for each model.
+```{r}
+print(comparison_df)
+```
+Interpretation:
+
+XGBoost consistently achieved the highest accuracy and F1‑score.
+Logistic Regression was moderate, with balanced but lower recall.
+Random Forest produced valid results after factor alignment, but lagged behind XGBoost in accuracy.
+
+6. Computational Latency
+Execution time was measured to assess efficiency.
+```{r}
+print(speed_df)
+```
+Interpretation:
+
+Logistic Regression was fastest.
+XGBoost balanced speed with strong accuracy.
+Random Forest was slower, reflecting its ensemble complexity.
+
+7. Error Distribution
+
+Confusion matrices highlight misclassifications.
+```{r, echo=FALSE}
+# Ensure target levels are mapped correctly for the heatmap grid
+target_levels <- c("Low Impact", "Medium Impact", "High Impact")
+cm_all$Actual <- factor(cm_all$Actual, levels = target_levels)
+cm_all$Predicted <- factor(cm_all$Predicted, levels = target_levels)
+
+# Create the p2 plot object completely inside this chunk
+p2 <- ggplot(cm_all, aes(x = Actual, y = Predicted, fill = Percentage)) +
+  geom_tile(color = "white", size = 0.5) +
+  geom_text(aes(label = sprintf("%d\n(%.1f%%)", Freq, Percentage)), size = 3.5, fontface = "bold") +
+  facet_wrap(~Model) +
+  scale_fill_gradient(low = "#f7fbff", high = "#0b3c5d") +
+  labs(
+    title = "Structural Misclassification Heatmaps",
+    x = "True Impact Level",
+    y = "Predicted Impact Level",
+    fill = "Data %"
+  ) +
+  theme_light(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    strip.text = element_text(face = "bold", color = "white"),
+    strip.background = element_rect(fill = "#2c3e50")
+  )
+
+# Now it can safely print without throwing an "object not found" error!
+print(p2)
+```
+
+8. Visualization Dashboard
+We generated three plots:
+
+Performance Profile: Accuracy, F1, and AUC side‑by‑side.
+Confusion Matrix Heatmaps: Misclassification grids for each model.
+Efficiency Frontier: Trade‑off between accuracy and execution time.
+
+```{r, echo=FALSE}
+# Reshape the core comparison metrics data for the bar chart
+plot_df <- comparison_df %>%
+  pivot_longer(cols = c(Accuracy, F1_Score, AUC), names_to = "Metric", values_to = "Value")
+
+# Create the p1 plot object completely inside this chunk
+p1 <- ggplot(plot_df, aes(x = Model, y = Value, fill = Model)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.85, color = "black", width = 0.4) +
+  geom_text(aes(label = sprintf("%.3f", Value)), vjust = -0.4, size = 3.5, fontface = "bold") +
+  facet_wrap(~Metric, scales = "free_y") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Predictive Performance Profile Across Core Metrics",
+    x = "",
+    y = "Score"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(fontface = "bold")
+  )
+
+# Print p1 safely
+print(p1)
+```
+
+9. Advanced Diagnostics
+Balanced Accuracy per class and Log Loss were computed for deeper insights.
+```{r}
+print(advanced_comparison)
+```
+Interpretation:  
+XGBoost maintained balanced accuracy across all classes and lower log loss, reinforcing its robustness
+
+Conclusion
+
+This unified evaluation demonstrates that XGBoost is the most reliable framework for predicting the impact level of global fuel price changes. It achieved the best balance of accuracy, F1‑score, and computational efficiency.
+
+Logistic Regression remains a lightweight option with acceptable performance.
+
+Random Forest requires careful factor alignment and was less competitive in this dataset.
+
+Final takeaway: For deployment in real‑world scenarios, XGBoost offers the strongest predictive performance and operational efficiency.
+
