@@ -1156,9 +1156,224 @@ vip_plot <- vip(final_model_fit, num_features = 10, geom = "point") +
 print(vip_plot)
 ```
 
+```{r save-models-regression, include=FALSE}
+# Save the final fitted models and test data snapshot for later evaluation
+saveRDS(linear_final_fit, "models/regression/final_linear_model.rds")
+saveRDS(final_fit, "models/regression/final_xgboost_model.rds")
+saveRDS(rf_final_fit, "models/regression/final_rf_model.rds")
+saveRDS(test_data, "models/regression/test_data_snapshot.rds")
+```
+
 ---
 
 # Regression Result
+
+## 1. Environment Setup
+
+Load the required packages and create the output folders.
+
+```{r environments}
+library(tidyverse)
+library(tidymodels)
+library(kableExtra)
+library(yardstick)
+
+# Strict pathing constraints to neutralize working directory mismatches
+dir_model_in <- "models/regression/"
+dir_eval_out <- "models/evaluation_regression/"
+
+if (!dir.exists(dir_eval_out)) {
+  dir.create(dir_eval_out, recursive = TRUE)
+}
+```
+
+## 2. Load Trained Models and Test Data 
+
+Import the saved models and the exact test dataset snapshot.
+
+```{r ingestion}
+# Path-safe validation check before deserializing objects
+paths <- c(
+  paste0(dir_model_in, "final_linear_model.rds"),
+  paste0(dir_model_in, "final_xgboost_model.rds"),
+  paste0(dir_model_in, "final_rf_model.rds"),
+  paste0(dir_model_in, "test_data_snapshot.rds")
+)
+
+for (p in paths) {
+  if (!file.exists(p)) stop(paste("Critical file missing at destination path:", p))
+}
+
+final_fit_linear <- readRDS(paste0(dir_model_in, "final_linear_model.rds"))
+final_fit_xgb <- readRDS(paste0(dir_model_in, "final_xgboost_model.rds"))
+final_fit_rf <- readRDS(paste0(dir_model_in, "final_rf_model.rds"))
+test_data_cleaned <- readRDS(paste0(dir_model_in, "test_data_snapshot.rds"))
+```
+
+## 3. Generate Predictions
+
+Use `augment()` to calculate predictions and residuals for all models.
+
+```{r inference-matrix}
+scored_data_long <- bind_rows(
+  augment(extract_workflow(final_fit_linear), new_data = test_data_cleaned) %>% mutate(Model = "Elastic Net Linear"),
+  augment(extract_workflow(final_fit_xgb), new_data = test_data_cleaned) %>% mutate(Model = "XGBoost"),
+  augment(extract_workflow(final_fit_rf), new_data = test_data_cleaned) %>% mutate(Model = "Random Forest")
+) %>%
+  mutate(Residual = avg_retail_price - .pred)
+```
+
+## 4. Model Performance Comparison
+
+Calculate standard error metrics to find the best performing model.
+
+```{r baseline-benchmarking}
+# Instantiate metric set tracking continuous error distances
+regression_metrics <- metric_set(rmse, mae, rsq, mape, huber_loss)
+
+comparison_df <- scored_data_long %>%
+  group_by(Model) %>%
+  regression_metrics(truth = avg_retail_price, estimate = .pred) %>%
+  select(Model, .metric, .estimate) %>%
+  pivot_wider(names_from = .metric, values_from = .estimate) %>%
+  inner_join(
+    scored_data_long %>%
+      group_by(Model) %>%
+      summarise(Max_Error = max(abs(Residual), na.rm = TRUE), .groups = "drop"),
+    by = "Model"
+  )
+
+# Output styled interactive summary table
+comparison_df %>%
+  kbl(caption = "Predictive Accuracy Comparison Matrix", booktabs = TRUE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  row_spec(which.min(comparison_df$rmse), bold = TRUE, background = "#e8f8f5")
+```
+
+## 5. Prediction Speed Benchmark
+
+Measure how fast each model runs predictions on the test set.
+
+```{r runtime-profiles}
+speed_tracking <- map_df(
+  list("Elastic Net Linear" = final_fit_linear, "XGBoost" = final_fit_xgb, "Random Forest" = final_fit_rf),
+  function(wf) {
+    start_time <- Sys.time()
+
+    # Extract the underlying trained workflow before running predict()
+    invisible(predict(extract_workflow(wf), new_data = test_data_cleaned))
+
+    duration <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
+    return(data.frame(Execution_Time_Secs = round(duration, 5)))
+  },
+  .id = "Model"
+)
+
+speed_tracking %>%
+  kbl(caption = "Operational Latency & Speed Benchmark Profiles") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+## 6. Performance by Subgroup
+
+Break down error metrics by fuel type and country to check for specific model biases.
+
+```{r deep-dive-diagnostics}
+# Product Categorization Group Breakdown
+fuel_diagnostic_matrix <- scored_data_long %>%
+  group_by(Model, fuel_type) %>%
+  regression_metrics(truth = avg_retail_price, estimate = .pred) %>%
+  filter(.metric %in% c("rmse", "mae")) %>%
+  select(Model, fuel_type, .metric, .estimate) %>%
+  pivot_wider(names_from = .metric, values_from = .estimate)
+
+# Geographical Regional Breakdown
+regional_diagnostic_matrix <- scored_data_long %>%
+  group_by(Model, country) %>%
+  regression_metrics(truth = avg_retail_price, estimate = .pred) %>%
+  filter(.metric %in% c("rmse", "mae")) %>%
+  select(Model, country, .metric, .estimate) %>%
+  pivot_wider(names_from = .metric, values_from = .estimate)
+
+fuel_diagnostic_matrix %>%
+  kbl(caption = "Subgroup Error Distributions by Fuel Type Classification") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+---
+
+## 7. Visual Dashboards
+
+### Diagram A: Error Comparison
+
+Predictive Error Profile Layouts explicitly quantify how effectively each algorithm minimizes price prediction errors across MAE, RMSE, and R-squared metrics. XGBoost decisively dominates the comparison, dropping prediction errors to a mere fraction of the other models with a remarkably low MAE and RMSE, drastically outperforming Random Forest’s higher error rates. This massive reduction in error is paired with a near-perfect R-squared value of 0.998, confirming that XGBoost captures nearly 100% of the price variance and establishes itself as the most accurate model by every metric.
+
+```{r visual-errors, echo=FALSE}
+plot_metrics <- comparison_df %>%
+  pivot_longer(cols = c(rmse, mae, rsq), names_to = "Metric", values_to = "Value") %>%
+  # Simplify model names for the axis labels
+  mutate(Model = case_when(
+    Model == "Elastic Net Linear" ~ "LR",
+    Model == "Random Forest" ~ "RF",
+    TRUE ~ Model
+  ))
+ggplot(plot_metrics, aes(x = Model, y = Value, fill = Model)) +
+  geom_col(alpha = 0.85, color = "black") +
+  geom_text(aes(label = sprintf("%.3f", Value)), vjust = -0.5, fontface = "bold", size = 3.5) +
+  facet_wrap(~Metric, scales = "free_y") +
+  scale_fill_viridis_d(option = "mako", begin = 0.2, end = 0.8) +
+  labs(title = "Predictive Error Profile Layouts", subtitle = "Standardized model performance comparison scale", x = "", y = "") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none", strip.text = element_text(face = "bold"), axis.text.x = element_text(face = "bold"))
+```
+
+### Diagram B: Actual vs. Predicted Values
+
+The Goodness-of-Fit plots reveal that while Elastic Net and Random Forest systematically underpredict higher values and visibly bow below the 45-degree line once actual prices exceed 4, XGBoost demonstrates near-perfect calibration. Its predictions tightly hug the diagonal parity line across the entire pricing spectrum, confirming its ability to accurately capture fluctuations and peaks with minimal deviation.
+
+```{r visual-fit, echo=FALSE}
+ggplot(scored_data_long, aes(x = avg_retail_price, y = .pred)) +
+  geom_point(alpha = 0.25, color = "#2c3e50") +
+  geom_abline(slope = 1, intercept = 0, color = "#e74c3c", linetype = "dashed", linewidth = 1) +
+  facet_wrap(~Model) +
+  labs(title = "Goodness-of-Fit Target Mappings", subtitle = "Evaluated against 45-degree real-world baseline parity line", x = "Actual Retail Market Price", y = "Engine Predicted Value") +
+  theme_light(base_size = 12) +
+  theme(strip.background = element_rect(fill = "#34495e"), strip.text = element_text(color = "white", face = "bold"))
+```
+
+### Diagram C: Speed vs. Accuracy Trade-Off
+
+The operational efficiency frontier evaluates model suitability for deployment by analyzing the multi-objective trade-off between predictive accuracy (RMSE) and computational latency. While the Elastic Net Linear model minimizes inference latency at the expense of precision, the Random Forest architecture proves suboptimal, exhibiting both elevated error rates and high computational overhead. Consequently, XGBoost establishes the optimal Pareto-efficient compromise, yielding the lowest overall error rate while maintaining a highly acceptable inference speed of approximately one second.
+
+```{r visual-frontier, echo=FALSE}
+frontier_df <- comparison_df %>% inner_join(speed_tracking, by = "Model")
+
+ggplot(frontier_df, aes(x = Execution_Time_Secs, y = rmse, color = Model, label = Model)) +
+  geom_point(size = 6, alpha = 0.9) +
+  geom_text(vjust = -1.5, fontface = "bold") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(title = "The Operational Efficiency Frontier Curve", subtitle = "Balancing predictive power against runtime inference latencies", x = "Prediction Inference Speed (Seconds)", y = "Root Mean Squared Error (RMSE)") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") +
+  expand_limits(
+    y = c(min(frontier_df$rmse) * 0.9, max(frontier_df$rmse) * 1.1),
+    x = c(min(frontier_df$Execution_Time_Secs) * 0.5, max(frontier_df$Execution_Time_Secs) * 1.5)
+  )
+```
+
+---
+
+## 8. Export Results
+
+Save all generated data frames to the evaluation folder for reporting.
+
+```{r exporting}
+saveRDS(comparison_df, paste0(dir_eval_out, "metrics_comparison.rds"))
+saveRDS(speed_tracking, paste0(dir_eval_out, "operational_speed.rds"))
+saveRDS(scored_data_long, paste0(dir_eval_out, "error_profiles_snapshot.rds"))
+saveRDS(fuel_diagnostic_matrix, paste0(dir_eval_out, "fuel_deep_dive_metrics.rds"))
+saveRDS(regional_diagnostic_matrix, paste0(dir_eval_out, "regional_deep_dive_metrics.rds"))
+```
 
 ---
 
