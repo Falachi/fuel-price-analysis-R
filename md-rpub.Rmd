@@ -1375,6 +1375,10 @@ saveRDS(fuel_diagnostic_matrix, paste0(dir_eval_out, "fuel_deep_dive_metrics.rds
 saveRDS(regional_diagnostic_matrix, paste0(dir_eval_out, "regional_deep_dive_metrics.rds"))
 ```
 
+## Conclusion
+
+The regression modeling phase has conclusively identified **XGBoost** as the superior predictive engine for forecasting retail fuel prices, achieving a remarkable balance of accuracy and operational efficiency. Its ability to capture complex non-linear relationships and interactions within the data has resulted in significantly lower error rates compared to both Elastic Net Linear Regression and Random Forest models. The comprehensive evaluation across multiple metrics and subgroups further validates XGBoost's robustness and suitability for deployment in real-world forecasting scenarios.
+
 ---
 
 # Classification Modeling
