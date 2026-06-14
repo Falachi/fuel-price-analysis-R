@@ -2435,7 +2435,7 @@ print(advanced_comparison)
 
 #### Interpretation:  
 
-XGBoost maintained balanced accuracy across all classes and lower log loss, reinforcing its robustness
+XGBoost maintained balanced accuracy across all classes and lower log loss, reinforcing its robustness.
 
 ## Conclusion
 
@@ -2446,6 +2446,32 @@ Logistic Regression remains a lightweight option with acceptable performance.
 Random Forest requires careful factor alignment and was less competitive in this dataset.
 
 Final takeaway: For deployment in real‑world scenarios, XGBoost offers the strongest predictive performance and operational efficiency.
+
+---
+
+# Limitations
+
+#### 1. Synthetic / secondary dataset limitation
+
+The dataset may not fully capture real-world fuel pricing mechanisms such as exchange rates, government price controls, import costs, and geopolitical shocks. 
+
+#### 2. Limited external predictors
+
+The model mainly uses Brent crude price and country-level categories. It does not include exchange rate, inflation, domestic tax policy changes, transport cost, or demand/supply indicators. 
+
+#### 3. Potential target leakage in classification
+
+Some features may be too closely related to how impact_level was created. The model should be rerun after removing leakage variables. 
+
+#### 4. Class imbalance
+
+The testing set has more Low Impact cases than High Impact cases, which can make accuracy look better than actual class-level performance. The report itself notes this imbalance in the classification section. 
+
+#### 5. Generalization risk
+
+High performance on historical data does not guarantee performance on future fuel shocks or unseen countries. 
+
+
 
 ---
 
