@@ -678,6 +678,7 @@ To build a reproducible data pipeline, we initialize our environment by loading 
 ```{r setup-data-ingestion, message=FALSE, warning=FALSE}
 library(tidyverse) # Core data science packages (dplyr, tidyr, stringr, readr)
 library(lubridate) # Specialized package for date conversion
+library(readr)
 
 df <- read_csv("data_clean/fuel_prices_cleaned_final.csv")
 ```
@@ -687,10 +688,10 @@ df <- read_csv("data_clean/fuel_prices_cleaned_final.csv")
 The raw input dataset tracks retail asset classes across multiple adjacent wide columns. To make this data compatible with tidy data principles, we first parse the text dates into structured date values ​​and then collapse the multiple fuel columns into a single categorical key-value pair.
 ```{r data-preprocessing}
 # 1. Date Conversion & Feature Extraction
-df_clean <- df %>%
+df_clean <- df |>
   mutate(
     # Convert string to Date format. 'dmy' parses Day/Month/Year correctly.
-    date = dmy(date),
+    date = as.Date(date),
 
     # Extract temporal features for downstream grouping
     year = year(date),
@@ -699,7 +700,7 @@ df_clean <- df %>%
   )
 
 # 2. Data Pivoting
-df_long <- df_clean %>%
+df_long <- df_clean |>
   pivot_longer(
     cols = c(petrol_usd_liter, diesel_usd_liter, lpg_usd_liter),
     names_to = "fuel_type", # New column holding the categorical fuel names
@@ -1383,7 +1384,7 @@ The regression modeling phase has conclusively identified **XGBoost** as the sup
 
 # Classification Modeling
 
-Same as regression modeling, we will be building building 3 classification models, and compare their performance to select the best one for our analysis. The 3 models are:
+Same as regression modeling, we will be building 3 classification models, and compare their performance to select the best one for our analysis. The 3 models are:
 1. Multinomial Logistic Regression
 2. Random Forest
 3. Extreme Gradient Boosting (XGBoost)
@@ -2057,7 +2058,7 @@ library(tidymodels)
 set.seed(123)
 ```
 
-Xtreme Gradient Boosting (XGBoost) is a powerful machine learning algorithm that has gained popularity for its performance and efficiency in classification tasks. It is an implementation of gradient boosting that uses decision trees as base learners. XGBoost is designed to optimize both speed and performance, making it a strong candidate for our classification problem.
+Extreme Gradient Boosting (XGBoost) is a powerful machine learning algorithm that has gained popularity for its performance and efficiency in classification tasks. It is an implementation of gradient boosting that uses decision trees as base learners. XGBoost is designed to optimize both speed and performance, making it a strong candidate for our classification problem.
 
 ### Building the Model
 
