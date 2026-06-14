@@ -49,7 +49,7 @@ We will employ a standard machine learning framework which consist of:
 The data was gathered from Kaggle by the user BELBIN BENO R M titled [*Global Fuel Prices 2020–2026*](https://www.kaggle.com/datasets/belbino/global-fuel-prices-20202026). It was then imported to R with the default function. A preview of the first 5 records are as below:
 
 ``` {r data-import}
-df <- read.csv("./data_raw/global_fuel_prices_2020_2026.csv")
+df <- read.csv("data_raw/dirty_fuel_data.csv")
 ```
 ``` {r data-preview, echo=FALSE}
 library(knitr)
@@ -111,13 +111,6 @@ For Q2 (Classification), the data provides the structural macro-context needed t
 
 ## Executive Summary
 This section details the reproducible data cleaning workflow applied to the dirty_fuel_data.csv dataset. The goal of this pipeline is to address duplicate rows, inconsistent categorical naming, character-to-numeric type mismatches, statistical outliers, and missing data imputation.
-
-## Clean Data Overview
-Total Observations: 27,468
-Total Columns: 10
-Total Unique Countries Covered: 84
-Petrol Price Range: $0.010 - $6.779 USD/Liter
-Diesel Price Range: $0.010 - $6.240 USD/Liter
 
 ## Part 1: Environment Setup
 First, we load the tidyverse suite (which includes dplyr, readr, stringr, and ggplot2 for efficient data manipulation) and import the raw dataset.
@@ -558,7 +551,7 @@ Tax percentage shows almost no correlation with Brent crude oil prices but demon
 ## Quarterly Change Analysis
 
 ### Quarter to Quarter Change in Petrol Price
-``` {r quarterly-change-petrol-country-code, echo=FALSE}
+``` {r quarterly-change-petrol-country-code, warning=FALSE}
 quarterly_country <- clean_data %>%
   group_by(country, year_quarter) %>%
   summarise(
@@ -579,7 +572,7 @@ quarterly_country <- quarterly_country %>%
 
 This code calculates the average petrol price for each country by quarter and then computes the percentage change in petrol price from one quarter to the next for each country. The `lag` function is used to access the previous quarter's mean petrol price for the percentage change calculation.
 
-``` {r quarterly-change-petrol-country-plot, echo=FALSE}
+``` {r quarterly-change-petrol-country-plot, echo=FALSE, warning=FALSE}
 ggplot(
   quarterly_country,
   aes(x = pct_change)
@@ -610,8 +603,8 @@ Although extreme changes are less common, several larger positive changes above 
 quarterly_country <- quarterly_country %>%
   mutate(
     impact_level = case_when(
-      abs(pct_change) < 5 ~ "Low",
-      abs(pct_change) < 15 ~ "Medium",
+      abs(pct_change) < 2 ~ "Low",
+      abs(pct_change) < 5 ~ "Medium",
       TRUE ~ "High"
     )
   )
@@ -623,7 +616,7 @@ quarterly_country$impact_level <- factor(
 )
 ```
 
-This code categorizes the percentage change in petrol price into three impact levels: "Low" for changes less than 5%, "Medium" for changes between 5% and 15%, and "High" for changes greater than or equal to 15%. The `case_when` function is used to create the `impact_level` variable based on the absolute value of the percentage change. The resulting `impact_level` variable is then converted into an ordered factor with specified levels.
+This code categorizes the percentage change in petrol price into three impact levels: "Low" for changes less than 2%, "Medium" for changes between 2% and 5%, and "High" for changes greater than or equal to 5%. The `case_when` function is used to create the `impact_level` variable based on the absolute value of the percentage change. The resulting `impact_level` variable is then converted into an ordered factor with specified levels.
 
 ``` {r impact-level-analysis-plot, echo=FALSE}
 ggplot(
@@ -644,7 +637,7 @@ ggplot(
   )
 ```
 
-The impact level distribution shows that most observations fall within the low impact category, followed by medium and high impact levels. This is consistent with the previous histogram analysis, where the majority of quarterly petrol price changes were concentrated around the -10% to 10% range. High impact observations occur less frequently, indicating that extreme quarterly fuel price fluctuations are relatively uncommon.
+The impact level distribution shows that most observations fall within the high impact category, followed by medium and low impact levels. This is consistent with the previous histogram analysis, where the majority of quarterly petrol price changes were concentrated around the -10% to 10% range. High impact observations occur less frequently, indicating that extreme quarterly fuel price fluctuations are relatively common.
 
 ## Summary
 
@@ -658,7 +651,7 @@ The impact level distribution shows that most observations fall within the low i
 - Tax percentage showed moderate positive correlation with fuel prices.
 - Higher subsidy levels were generally associated with lower and more stable petrol prices.
 - Most quarterly petrol price changes were concentrated within the -10% to 10% range.
-- The majority of observations were classified as low impact, while high impact fuel price changes occurred less
+- The majority of observations were classified as high impact, while low impact fuel price changes occurred less
   frequently.
 - The findings suggest that fuel prices are influenced by crude oil trends, taxation, subsidies, and regional economic
   conditions.
@@ -1157,7 +1150,9 @@ vip_plot <- vip(final_model_fit, num_features = 10, geom = "point") +
 print(vip_plot)
 ```
 
-```{r save-models-regression, include=FALSE}
+## Save Models and Test Data Snapshot
+
+```{r save-models-regression, eval=FALSE}
 # Save the final fitted models and test data snapshot for later evaluation
 saveRDS(linear_final_fit, "models/regression/final_linear_model.rds")
 saveRDS(final_fit, "models/regression/final_xgboost_model.rds")
@@ -2381,7 +2376,8 @@ p2 <- ggplot(cm_all, aes(x = Actual, y = Predicted, fill = Percentage)) +
   theme(
     plot.title = element_text(face = "bold", size = 13),
     strip.text = element_text(face = "bold", color = "white"),
-    strip.background = element_rect(fill = "#2c3e50")
+    strip.background = element_rect(fill = "#2c3e50"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
   )
 
 # Now it can safely print without throwing an "object not found" error!
@@ -2399,12 +2395,23 @@ We generated three plots:
 **Efficiency Frontier:** Trade‑off between accuracy and execution time.
 
 ```{r, echo=FALSE}
-# Reshape the core comparison metrics data for the bar chart
-plot_df <- comparison_df %>%
-  pivot_longer(cols = c(Accuracy, F1_Score, AUC), names_to = "Metric", values_to = "Value")
+plot_df <- comparison_df |>
+  pivot_longer(
+    cols = c(Accuracy, F1_Score, AUC),
+    names_to = "Metric",
+    values_to = "Value"
+  ) |>
+  mutate(
+    Model_short = case_when(
+      Model == "Random Forest" ~ "RF",
+      Model == "Multinomial Logistic" ~ "M-LR",
+      Model == "XGBoost" ~ "XGB",
+      TRUE ~ Model
+    )
+  )
 
-# Create the p1 plot object completely inside this chunk
-p1 <- ggplot(plot_df, aes(x = Model, y = Value, fill = Model)) +
+
+p1 <- ggplot(plot_df, aes(x = Model_short, y = Value, fill = Model)) +
   geom_bar(stat = "identity", position = "dodge", alpha = 0.85, color = "black", width = 0.4) +
   geom_text(aes(label = sprintf("%.3f", Value)), vjust = -0.4, size = 3.5, fontface = "bold") +
   facet_wrap(~Metric, scales = "free_y") +
@@ -2418,10 +2425,9 @@ p1 <- ggplot(plot_df, aes(x = Model, y = Value, fill = Model)) +
   theme(
     legend.position = "none",
     plot.title = element_text(face = "bold", size = 13),
-    axis.text.x = element_text(fontface = "bold")
+    axis.text.x = element_text(face = "bold")
   )
 
-# Print p1 safely
 print(p1)
 ```
 
